@@ -6,7 +6,7 @@
 # Summary and Detail files must be saved in the directory "Files_To_Process" in the Post_Processing directory.
 
 
-#####################################################################################################
+#==============================================================================================
 
 #' Process USDOS output files
 #'
@@ -49,6 +49,7 @@
 #' @param  ls_match Should the local spread map's color palette match the other maps (TRUE, the default value) or use its default of color_bluepurple (FALSE)
 #' @param  controlValue Calculates the cost of control actions based upon the number of animals culled and vaccinated in a scenario
 #' @param  animalsControlled Indicates that the number of animals controlled (culled or vaccinated) should be drawn from the _controlSummary.txt file. 
+#' @param  waitlistInformation
 #' @param  flexibleControl Indicates that there are flexible or state-dependent control runs that will be imported. This is will affect how run type names are parsed. 
 #' @param  verbose Controls the amount of information printed as the function operates (0 = nothing, 1 = debug)
 
@@ -60,29 +61,29 @@
 
 #' @author Send bug reports, suggestions, corrections, or comments to webblaboratory(at)gmail.com
 #' 
-#####################################################################################################
-#####################################################################################################
+#==============================================================================================
+#==============================================================================================
 
-#####     Function       #######
+#     Function       
 
-#####################################################################################################
-#####################################################################################################
+#==============================================================================================
+#==============================================================================================
 
 processUSDOS = function(export.datafiles= 0,
                         results.report = FALSE,
                         summaryTable = TRUE,
                         duration = TRUE,
                         Dur_min = 23,
-                        Dur_cutoff = 125,
+                        Dur_cutoff = 175,
                         premInf = TRUE,
                         PremInf_min = 10, 
-                        PremInf_cutoff = 1000,
+                        PremInf_cutoff = 5000,
                         premReport = TRUE,
                         ReportedPrems_min = 5,
                         ReportedPrems_cutoff = 100,
                         epidemicExtent = TRUE,
-                        EpidExt_min= 1,
-                        EpidExt_cutoff=50,
+                        EpidExt_min= 2,
+                        EpidExt_cutoff=500,
                         movementBan = TRUE,
                         MB_min = 0,
                         MB_cutoff = 1,
@@ -97,7 +98,7 @@ processUSDOS = function(export.datafiles= 0,
                         DiagTest_cutoff = 1000,
                         animalsInfected = TRUE,
                         Anim_min = 10,
-                        Anim_cutoff = 1000,
+                        Anim_cutoff = 5e6,
                         countyRisk = TRUE,
                         CountyRisk_min = 0,
                         CountyRisk_cutoff = 0.001,
@@ -107,21 +108,23 @@ processUSDOS = function(export.datafiles= 0,
                         ls_match = TRUE,
                         controlValue = FALSE,
                         animalsControlled = FALSE,
+                        waitlistInformation = FALSE,
+                        completionProportion = FALSE,
                         maps = FALSE,
+                        plots = FALSE,
                         dataExist = FALSE,
                         flexibleControl = FALSE,
-                        verbose = 0
+                        verbose = 1,
+                        custom_labels = FALSE
                        )
 {
+#==============================================================================================
+#==============================================================================================
 
+#     Setup      
 
-#####################################################################################################
-#####################################################################################################
-
-#####     Setup      #######
-
-#####################################################################################################
-#####################################################################################################
+#==============================================================================================
+#==============================================================================================
 # This function finds the directory in which the the current file is located.
 path0 <- dirname(rstudioapi::getActiveDocumentContext()$path)
 setwd(path0)
@@ -144,13 +147,16 @@ pathfiles <- file.path(path0, "Files_To_Process/")
 # Reset graphical parameters to ensure there are no issues plotting
 graphics.off()
 
+# assign verbose level to global environment so not all functions have to declare it
+# assign("verbose",verbose, envir = .GlobalEnv)
+
 ## Load Packages, function to determine color palettes, geography files, functions for importing data, mapping functions ##
 if (verbose > 0) {print("Loading packages (Package_Manager.R)...")}
 source(paste0(dependencies,"Package_Manager.R"))
 if (verbose > 0) {print("Loading color pallettes (Color_Manager.R)...")}
 source(paste0(dependencies,"Color_Manager.R"))
 if (verbose > 0) {print("Loading geography files...")}
-#source(paste0(dependencies,"load_geographyFiles.R"))
+source(paste0(dependencies,"load_geographyFiles.R"))
 if (verbose > 0) {print("Loading functions to import summary, detail, and control files (Data_Manager.R)...")}
 source(paste0(dependencies,"Data_Manager.R"))
 if (verbose > 0) {print("Loading plotting functions (Plot_Manager.R)...")}
@@ -159,47 +165,42 @@ if (verbose > 0) {print("Loading mapping functions (Map_Manager.R & map_by_fips_
 source(paste0(dependencies,"map_by_fips_standalone.R"))
 source(paste0(dependencies,"Map_Manager.R"))
 
-#### Read and format Summary Files ####
+# Read and format Summary Files #
 summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
 
 ## Read in all the summary files ##
-### Storing as a single file with many columns    
-# 
-# # Detect if there were any flexible control strategy runs.
-if (flexibleControl == FALSE) {
-  if (any(str_detect(summary.files, "percentIncrease")) | any(str_detect(summary.files, "availability"))) {
-    warning("Flexible/state-dependent control files detected. Do you want to set flexibleControl == TRUE? (y/n)")
-    response <- readline()
-    
-    if (tolower(response == "y")) {
-      flexibleControl == TRUE
-      warning("Changed flexibleControl == TRUE")
-    }
+# Storing as a single file with many columns    
+
+if (dataExist) {
+  setwd(data_output)
+  load("run_information.RData")
+  county.summary <- read.csv("CountySummary.csv")
+} else {
+  if(detectCores() >= 4){
+    # Read summary files in parallel. Uses n-2 cores available on your machine
+    county.summary <- .import_summaryFiles_parallel(flexibleControl = flexibleControl,
+                                                    summary.files = summary.files,
+                                                    pathfiles = pathfiles,
+                                                    export.datafiles = export.datafiles,
+                                                    path_output = data_output) 
+  } else{
+    # If not enough cores are available, then import without parallelization. This will take much longer.
+    print("Importing summary files without the use of parralelization. This operation may take a few minutes.")
+    county.summary <- .import_summaryFiles(flexibleControl = flexibleControl,
+                                           summary.files = summary.files,
+                                           pathfiles = pathfiles,
+                                           export.datafiles = export.datafiles,
+                                           path_output = data_output)
   }
 }
 
-if (dataExist == FALSE) {
-  # Summary file reading
-  ### This piece takes several minutes
-  county.summary <- .import_summaryFiles(flexibleControl = flexibleControl, 
-                                         summary.files = summary.files, 
-                                         pathfiles = pathfiles,
-                                         export.datafiles = export.datafiles, 
-                                         path_output = data_output)
-  setwd(data_output)
-  if (export.datafiles == 1 | export.datafiles ==  3) {
-    write.csv(county.summary, file = paste0(paste0("CountySummary_",Sys.Date()),".csv"))
-    save.image(file = ".RData")
-  }
-} else if (dataExist == TRUE) {
-  setwd(data_output)
-  load(".RData")
-}
+
 
 colors = .load_colorPalette(plot_color = plot_color, map_color = map_color, num_colors = length(run.types))
 
 cbPalette = colors$plot_color
 palette = colors$map_color
+custom_names = NULL
 
 # Error if <100 summary files per run type
 if( runs_per_ctrl_type<100 ) c(warning('At least 100 iterations are required to capture uncertainty in model predictions. Do not analyze fewer than 100 runs.'), rm(county.summary))
@@ -207,46 +208,68 @@ if( runs_per_ctrl_type<100 ) c(warning('At least 100 iterations are required to 
 # KO: Here could parse run types into named bins (ex. it's an IPDCcull run, regardless of specifics)
     # or leave as-is (Not as clean, but people will be able to see exactly what each is, including MvmtBans)
 
-#####################################################################################################
-##### Duration  (Summary Files)      #######
-#####################################################################################################
+#==============================================================================================
+# Duration  (Summary Files)      
+#==============================================================================================
 
 if (duration == TRUE){
   if (verbose > 0) {print("Duration calculations")}
   
   setwd(data_output)
+  
   # if re-running after the data files are generated
-  if ((dataExist == TRUE) & ("Duration.csv" %in% list.files())) {
+  if ((dataExist == TRUE) & ("Duration.csv" %in% list.files()) & ("Duration_long.csv" %in% list.files())) {
     if (verbose > 0) {print("File exists")}
-    load("postProcessing_USDOSv2.1.RData")
     Dur <- read.csv("Duration.csv", header = TRUE)
+    Dur.long <- read.csv("Duration_long.csv", header = TRUE)
   } else { #otherwise proceed as usual
-    Dur=county.summary[,grepl( "fips|polyname|Duration|Type" , names( county.summary ) )]
+    Dur=county.summary[,grepl( "fips|polyname|Duration|type" , names( county.summary ) )]
+    
+    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
+    data = .reshape_data(wide_data = Dur, metric = "Duration", dataExist = dataExist, export.datafiles = export.datafiles)
+    Dur = data[[1]]
+    Dur.long = data[[2]]
   } 
   
-  #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-  data = .reshape_data(wide_data = Dur, metric = "Duration", flex = flexibleControl, export.datafiles = export.datafiles)
-  Dur = data[[1]]
-  Dur.long = data[[2]]
+  if (custom_labels == TRUE) {
+    cat(paste(levels(Dur.long$type), collapse = "\n"),
+        "\n \n \n The order of violin plot labels is listed above.",
+        "\n \n \n Would you like to import new names? If yes, enter a vector of names in the order of the old names (e.g. c(name1,name2,name3,...)",
+        "\n If not, just press `enter` for default names to be used.")
+    # Capture user input for new names
+    custom_names <- readline(prompt = "")
+    
+    # Convert the user input to a vector
+    custom_names <- eval(parse(text = custom_names))
+    
+    if (is.null(custom_names)) {
+      warning("Vector is empty. Using default names", immediate. = TRUE)
+      custom_names <- NULL # just for good measure
+    } else if (length(custom_names) != length(levels(Dur.long$type))) {       # Check if the length matches the number of levels
+      warning("The length of the provided names vector does not match the number of levels. Using default names.", immediate. = TRUE)
+      custom_names <- NULL
+    }
+  }
   
-  if (verbose > 1) {print("Creating duration plots.")}
-  .plot(metric = "Duration", plot_output = plot_output, long_data = Dur.long, 
-        cutoff = Dur_cutoff, min = Dur_min, cbPalette = cbPalette)
-  
-  if (verbose > 0) {print("Duration violin plots generated.")}
+  if (plots == TRUE) {
+    if (verbose > 1) {print("Creating duration plots.")}
+    .plot(metric = "Duration", plot_output = plot_output, long_data = Dur.long, 
+          cutoff = Dur_cutoff, min = Dur_min, cbPalette = cbPalette, custom_names = custom_names)
+    if (verbose > 0) {print("Duration violin plots generated.")}
+  }
   
   if (maps == TRUE) {
     if (verbose > 1) {print("Generating duration maps")}
-    .map(metric = "Duration", long_data = Dur.long, wide_data = Dur, 
-         verbose = verbose, map_output = map_output, palette = palette)
+    .map(metric = "Duration", long_data = Dur.long, wide_data = Dur, min_value = Dur_min,
+          verbose = verbose, map_output = map_output, palette = palette)
     if (verbose > 0) {print("Duration maps generated.")}
   }
   
 }
 
-##################################################################
-#### Number of Premises Infected (Summary Files) ####
-##################################################################
+#==============================================================================================
+# Number of Premises Infected (Summary Files) 
+#==============================================================================================
 
 if (premInf == TRUE){
     
@@ -255,46 +278,48 @@ if (premInf == TRUE){
     setwd(data_output)
     
     # if re-running after the data files are generated
-    if ((dataExist == TRUE) & ("PremisesInfected.csv" %in% list.files())) {
+    if ((dataExist == TRUE) & ("PremisesInfected.csv" %in% list.files()) & ("PremisesInfected_long.csv" %in% list.files())) {
       PremInf <- read.csv("PremisesInfected.csv", header = TRUE)
+      PremInf.long <- read.csv("PremisesInfected_long.csv", header = TRUE)
     } else { #otherwise proceed as usual
-      PremInf=county.summary[,grepl( "fips|polyname|Num_Inf|Type" , names( county.summary ) )]
+      PremInf=county.summary[,grepl( "fips|polyname|Num_Inf|type" , names( county.summary ) )]
+      
+      #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
+      data = .reshape_data(wide_data = PremInf, metric = "PremisesInfected", dataExist = dataExist, export.datafiles = export.datafiles)
+      PremInf = data[[1]]
+      PremInf.long = data[[2]]
     }
     
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = PremInf, metric = "PremisesInfected", flex = flexibleControl, export.datafiles = export.datafiles)
-    PremInf = data[[1]]
-    PremInf.long = data[[2]]
-    
-    if (verbose > 1) {print("Creating number of infected premises plots.")}
-    
-    .plot(metric = "PremInf", plot_output = plot_output, long_data = PremInf.long, 
-          cutoff = PremInf_cutoff, min = PremInf_min, cbPalette = cbPalette)
-    
-    if (verbose > 0) {print("Number of infected premises plots generated.")}
+    if (plots == TRUE) {
+      if (verbose > 1) {print("Creating number of infected premises plots.")}
+      .plot(metric = "PremInf", plot_output = plot_output, long_data = PremInf.long, 
+            cutoff = PremInf_cutoff, min = PremInf_min, cbPalette = cbPalette, custom_names = custom_names)
+      if (verbose > 0) {print("Number of infected premises plots generated.")}
+    }
     
     if (maps == TRUE) {
       if (verbose > 1) {print("Generating number of infected premises maps")}
-      .map(metric = "PremInf", long_data = PremInf.long, wide_data = PremInf, 
+      .map(metric = "PremInf", long_data = PremInf.long, wide_data = PremInf, min_value = PremInf_min, 
            verbose = verbose, map_output = map_output, palette = palette)
       if (verbose > 0) {print("Number of infected premises maps generated.")}
     }
   }
 
-#####################################################################################################
-#### Number of Reported Premises (Summary Files) ####
+#==============================================================================================
+# Number of Reported Premises (Summary Files) 
 # Same (mis a part reporting delay) as infected unless there is "diagnostics" 
-#####################################################################################################
+#==============================================================================================
 
 if (premReport == TRUE){
   if (verbose > 0) {print("Number of reported premises calculations")}
   
   setwd(data_output)
   
-  if ((dataExist == TRUE) & ("ReportedPremises.csv" %in% list.files())) {
+  if ((dataExist == TRUE) & ("ReportedPremises.csv" %in% list.files()) & ("ReportedPremises_long.csv" %in% list.files())) {
     ReportedPrems <- read.csv("ReportedPremises.csv", header = TRUE)
+    ReportedPrems <- read.csv("ReportedPremises_long.csv", header = TRUE)
   } else { #otherwise proceed as usual
-    ReportedPrems = county.summary[,grepl( "fips|polyname|Num_Reports|Type" , names( county.summary ) )]
+    ReportedPrems = county.summary[,grepl( "fips|polyname|Num_Reports|type" , names( county.summary ) )]
   }    
   
   # Identify adjacent "Type" columns and exclude them from the selection
@@ -315,29 +340,29 @@ if (premReport == TRUE){
     if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
     
     #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = ReportedPrems, metric = "ReportedPremises", flex = flexibleControl, export.datafiles = export.datafiles)
+    data = .reshape_data(wide_data = ReportedPrems, metric = "ReportedPremises", dataExist = dataExist, export.datafiles = export.datafiles)
     ReportedPrems = data[[1]]
     ReportedPrems.long = data[[2]]
     
-    if (verbose > 1) {print("Creating number of reported premises plots.")}
-    
-    .plot(metric = "ReportedPrems", plot_output = plot_output, long_data = ReportedPrems.long, 
-          cutoff = ReportedPrems_cutoff, min = ReportedPrems_min, cbPalette = cbPalette)
-    
-    if (verbose > 0) {print("Number of reported premises plots generated.")}
+    if (plots == TRUE ) {
+      if (verbose > 1) {print("Creating number of reported premises plots.")}
+      .plot(metric = "ReportedPrems", plot_output = plot_output, long_data = ReportedPrems.long, 
+            cutoff = ReportedPrems_cutoff, min = ReportedPrems_min, cbPalette = cbPalette, custom_names = custom_names)
+      if (verbose > 0) {print("Number of reported premises plots generated.")}
+    }
     
     if (maps == TRUE) {
       if (verbose > 1) {print("Generating number of infected premises maps")}
       .map(metric = "ReportedPrems", long_data = ReportedPrems.long, wide_data = ReportedPrems, 
-           verbose = verbose, map_output = map_output, palette = palette)
+           min_value = ReportedPrems_min, verbose = verbose, map_output = map_output, palette = palette)
       if (verbose > 0) {print("Number of reported premises maps generated.")}
     }
   }
 }
 
-#####################################################################################################
-#### Number of affected counties aka Epidemic Extent (nAffCounties in Summary Files) ###
-#####################################################################################################
+#==============================================================================================
+# Number of affected counties aka Epidemic Extent (nAffCounties in Summary Files) 
+#==============================================================================================
 
 if (epidemicExtent == TRUE){
   if (verbose > 0) {print("Number of affected county calculations")}
@@ -345,45 +370,100 @@ if (epidemicExtent == TRUE){
   setwd(data_output)
   
   # if re-running after the data files are generated
-  if ((dataExist == TRUE) & ("EpidemicExtent.csv" %in% list.files())) {
+  if ((dataExist == TRUE) & ("EpidemicExtent.csv" %in% list.files()) & ("EpidemicExtent_long.csv" %in% list.files())) {
     EpidExt <- read.csv("EpidemicExtent.csv", header = TRUE)
+    EpidExt <- read.csv("EpidemicExtent_long.csv", header = TRUE)
   } else { #otherwise proceed as usual
-    EpidExt=county.summary[,grepl( "fips|polyname|nAffCounties|Type" , names( county.summary ) )]
+    EpidExt=county.summary[,grepl( "fips|polyname|nAffCounties|type" , names( county.summary ) )]
+    
+    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
+    data = .reshape_data(wide_data = EpidExt, metric = "EpidemicExtent", dataExist = dataExist, export.datafiles = export.datafiles)
+    EpidExt = data[[1]]
+    EpidExt.long = data[[2]]
   }
+
   
-  #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-  data = .reshape_data(wide_data = EpidExt, metric = "EpidemicExtent", flex = flexibleControl, export.datafiles = export.datafiles)
-  EpidExt = data[[1]]
-  EpidExt.long = data[[2]]
-  
-  if (verbose > 1) {print("Creating number of affected county plots.")}
-  
-  .plot(metric = "EpidExt", plot_output = plot_output, long_data = EpidExt.long, 
-        cutoff = EpidExt_cutoff, min = EpidExt_min, cbPalette = cbPalette)
-  
-  if (verbose > 0) {print("Number of affected county plots generated.")}
+  if (plots == TRUE) {
+    if (verbose > 1) {print("Creating number of affected county plots.")}
+    .plot(metric = "EpidExt", plot_output = plot_output, long_data = EpidExt.long, 
+          cutoff = EpidExt_cutoff, min = EpidExt_min, cbPalette = cbPalette, custom_names = custom_names)
+    if (verbose > 0) {print("Number of affected county plots generated.")}
+  }
   
   if (maps == TRUE) {
     if (verbose > 1) {print("Generating number of affected county maps")}
-    .map(metric = "EpidExt", long_data = EpidExt.long, wide_data = EpidExt, 
+    .map(metric = "EpidExt", long_data = EpidExt.long, wide_data = EpidExt, min_value = EpidExt_min, 
          verbose = verbose, map_output = map_output, palette = palette)
     if (verbose > 0) {print("Number of affected county maps generated.")}
   }
 }
 
-#####################################################################################################
-#####  Number Areas affected by movement ban (summary)      #######
-#####################################################################################################
+#==============================================================================================
+#  List detail files and load FLAPS      
+#==============================================================================================
 
-  if (movementBan == TRUE){
-    source(paste0(source_files,"MovementBan.R"))
+if(animalsInfected == TRUE | localSpread == TRUE | controlValue == TRUE | 
+   animalsControlled == TRUE | completionProportion == TRUE) {
+  setwd(path0)
+  
+  if (verbose > 0) {print("Finding detail file names and importing FLAPS files")}
+  # Imports FLAPS files, finds detail file names, and assigns them all to global environment
+  ## Find all the detail files in the Files_To_Process" directory ##
+  # detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  flaps_file_list <- .import_FLAPS(path0 = path0)
+  if (verbose > 0) {print("Detail files found and FLAPS files imported.")}
+}
+
+#==============================================================================================
+#  Number of animals controlled. Output file also used for cost calculations    
+#==============================================================================================
+
+if(controlValue == TRUE | animalsControlled == TRUE){
+  print("Control value calculations are still under development. This operation will only produce a dataframe used to calculate value.")
+  
+  setwd(path0)
+  ## Find all the detail files in the Files_To_Process" directory ##
+  control.summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_controlSummary.txt", full.names = FALSE)
+  summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
+  # Read through each controlSummary file 
+  # Filter summary files
+  no_control <- summary.files[grep("noControl", summary.files)]
+  control.summary.files <- control.summary.files[grep("cull_vax_0_-1_earliest_earliest", control.summary.files)]
+  summary.files <- summary.files[grep("cull_vax_0_-1_earliest_earliest", summary.files)]
+  control.summary.files <- control.summary.files[grep("newPremReportsOverX|percentIncrease|detail_20", control.summary.files)]
+  summary.files <- summary.files[grep("newPremReportsOverX|percentIncrease|detail_20", summary.files)]
+  
+  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
+  detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl|detail_20", detail.fnames)]
+  
+  if(detectCores() >= 4){
+    Anim.long <- .import_controlSummaryFiles_parallel(control_file_names = control.summary.files, 
+                                                      summary_file_names = summary.files, 
+                                                      no_control = no_control,
+                                                      detail_file_names = detail.fnames,
+                                                      pathfiles = pathfiles,
+                                                      flaps_file_list = flaps_file_list,
+                                                      export.datafiles = export.datafiles, 
+                                                      path_output = data_output)
+  } else {
+    Anim.long <- .import_controlSummaryFiles(control.summary.files = control.summary.files, 
+                                             summary.files = summary.files, 
+                                             no_control = no_control,
+                                             detail.fnames = detail.fnames,
+                                             pathfiles = pathfiles,
+                                             flaps_file_list = flaps_file_list,
+                                             export.datafiles = export.datafiles, 
+                                             path_output = data_output) 
   }
+}
 
-#####################################################################################################
-#####  Premises Culled (summary)      #######
-#####################################################################################################
 
-  # Problems (fixed, see comments)
+#==============================================================================================
+#  Premises Culled (summary)      
+#==============================================================================================
+
+# Problems (fixed, see comments)
 if (premisesCulled == TRUE) {
   if (verbose > 0) {print("Number of premises culled calculations")}
   
@@ -392,7 +472,7 @@ if (premisesCulled == TRUE) {
   if ((dataExist == TRUE) & ("PremisesCulled.csv" %in% list.files())) {
     PremCull <- read.csv("PremisesCulled.csv", header = TRUE)
   } else { #otherwise proceed as usual
-    PremCull=county.summary[,grepl( "fips|polyname|cullImplemented|Type" , names( county.summary ) )]
+    PremCull=county.summary[,grepl( "fips|polyname|cullImplemented|type" , names( county.summary ) )]
     PremCull=PremCull[,!grepl( "DCSubset" , names( PremCull ) )]
   }    
   
@@ -408,12 +488,11 @@ if (premisesCulled == TRUE) {
     if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
     
     # This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = PremCull, metric = "PremisesCulled", flex = flexibleControl, export.datafiles = export.datafiles)
+    data = .reshape_data(wide_data = PremCull, metric = "PremisesCulled", dataExist = dataExist, export.datafiles = export.datafiles)
     PremCull = data[[1]]
     PremCull.long = data[[2]]
     
     if (verbose > 1) {print("Creating number of culled premises plots.")}
-    
     .plot(metric = "PremCull", plot_output = plot_output, long_data = PremCull.long, 
           cutoff = PremCull_cutoff, min = PremCull_min, cbPalette = cbPalette)
     
@@ -421,16 +500,16 @@ if (premisesCulled == TRUE) {
     
     if (maps == TRUE) {
       if (verbose > 1) {print("Generating number of culled premises maps")}
-      .map(metric = "PremCull", long_data = PremCull.long, wide_data = PremCull, 
+      .map(metric = "PremCull", long_data = PremCull.long, wide_data = PremCull, min_value = PremCull_min, 
            verbose = verbose, map_output = map_output, palette = palette)
       if (verbose > 0) {print("Number of culled premises maps generated.")}
     }
   }
 }
 
-#####################################################################################################
-#####  Premises Vaccinated (summary)      #######
-#####################################################################################################
+#==============================================================================================
+#  Premises Vaccinated (summary)      
+#==============================================================================================
 
 if (premisesVax == TRUE) {
   if (verbose > 0) {print("Number of premises vaccinated calculations")}
@@ -440,7 +519,7 @@ if (premisesVax == TRUE) {
   if ((dataExist == TRUE) & ("PremisesVax.csv" %in% list.files())) {
     PremVax <- read.csv("PremisesVax.csv", header = TRUE)
   } else { #otherwise proceed as usual
-    PremVax=county.summary[,grepl( "fips|polyname|vaxImplemented|Type" , names( county.summary ) )]
+    PremVax=county.summary[,grepl( "fips|polyname|vaxImplemented|type" , names( county.summary ) )]
     PremVax=PremVax[,!grepl( "DCSubset" , names( PremVax ) )]
   }    
   
@@ -457,7 +536,7 @@ if (premisesVax == TRUE) {
     if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
     
     #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = PremVax, metric = "PremisesVax", flex = flexibleControl, export.datafiles = export.datafiles)
+    data = .reshape_data(wide_data = PremVax, metric = "PremisesVax", dataExist = dataExist, export.datafiles = export.datafiles)
     PremVax = data[[1]]
     PremVax.long = data[[2]]
     
@@ -470,166 +549,155 @@ if (premisesVax == TRUE) {
     
     if (maps == TRUE) {
       if (verbose > 1) {print("Generating number of premises vaccinated maps")}
-      .map(metric = "PremVax", long_data = PremVax.long, wide_data = PremVax, 
+      .map(metric = "PremVax", long_data = PremVax.long, wide_data = PremVax, min_value = PremVax_min, 
            verbose = verbose, map_output = map_output, palette = palette)
       if (verbose > 0) {print("Number of premises vaccinated maps generated.")}
     }
   }
 }
 
-#####################################################################################################
-#####  Diagnostics tests completed (Summary file)    #######
-#####################################################################################################
+#==============================================================================================
+#  Diagnostics tests completed (Summary file)    
+#==============================================================================================
 
-  if (diagnosticTests == TRUE){
-    warning("Diagnostic test calculations are still under development. Skipping this operation.")
-    source(paste0(source_files,"DiagnosticTest.R"))
+if (diagnosticTests == TRUE){
+  
+  if (verbose > 0) {print("Diagnostic test calculations")}
+  
+  setwd(data_output)
+  
+  if ((dataExist == TRUE) & ("DiagTest.csv" %in% list.files()) & ("DiagTest_long.csv" %in% list.files())) {
+    DiagTest <- read.csv("DiagTest.csv", header = TRUE)
+    DiagTest.long <- read.csv("DiagTest_long.csv", header = TRUE)
+  } else { #otherwise proceed as usual
+    DiagTest=county.summary[,grepl( "fips|polyname|Complete|type" , names( county.summary ) )]
   }
 
-#####################################################################################################
-#####  List detail files and load FLAPS      #######
-#####################################################################################################
-
-  if(animalsInfected == TRUE | countyRisk == TRUE | localSpread == TRUE | waitlistInformation == TRUE | 
-     controlValue == TRUE | animalsControlled == TRUE | completionProportion == TRUE){
-    setwd(path0)
+  deleteme=c(0,rep(NA,ncol(DiagTest)-1))
+  
+  setwd(data_output)
+  
+  # this gets rid of adjacent "type" columns, which indicate that a cull wasn't implemented
+  for(i in 2:ncol(DiagTest)){
+    deleteme[i]=ifelse(grepl("Type", colnames(DiagTest)[i-1]) & grepl("Type", colnames(DiagTest)[i])|
+                         grepl("Type", colnames(DiagTest)[i]) & grepl("Type", colnames(DiagTest)[i+1]),1,0)
+  }
+  
+  DiagTest=DiagTest[,deleteme==0]
+  
+  if(ncol(DiagTest)>2){
+    if (verbose > 0) {print("Diagnotic test calculations: ncol >2")}
     
-    if (verbose > 0) {print("Finding detail file names and importing FLAPS files")}
-    # Imports FLAPS files, finds detail file names, and assigns them all to global environment
-    ## Find all the detail files in the Files_To_Process" directory ##
-    detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
-    .import_FLAPS(path0 = path0)
-    if (verbose > 0) {print("Detail files found and FLAPS files imported.")}
+    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
+    data = .reshape_data(wide_data = DiagTest, metric = "DiagTest", dataExist = dataExist, export.datafiles = export.datafiles)
+    DiagTest = data[[1]]
+    DiagTest.long = data[[2]]
+    
+    if (verbose > 1) {print("Creating number of diagnostic test plots.")}
+    
+    .plot(metric = "DiagTest", plot_output = plot_output, long_data = DiagTest.long, 
+          cutoff = DiagTest_cutoff, min = DiagTest_min, cbPalette = cbPalette)
+    
+    if (verbose > 0) {print("Diagnostic test plots generated.")}
+    
+    if (maps == TRUE) {
+      if (verbose > 1) {print("Generating diagnostic test maps")}
+      .map(metric = "DiagTest", long_data = DiagTest.long, wide_data = DiagTest, min_value = DiagTest_min, 
+           verbose = verbose, map_output = map_output, palette = palette)
+      if (verbose > 0) {print("Diagnostic test maps generated.")}
+    }
   }
+  
+  # warning("Diagnostic test calculations are still under development. Skipping this operation.")
+  # source(paste0(source_files,"DiagnosticTest.R"))
+}
 
-#####################################################################################################
-#####  Number of Animals Infected (Combines summary and Detail Files)      #######
+#==============================================================================================
+#  Number of Animals Infected (Combines summary and Detail Files)      
 # End result is one line per rep, so treat like a summary metric. 
-#####################################################################################################
+#==============================================================================================
 
 if(animalsInfected == TRUE){
-  source(paste0(source_files,"animalsInfected.R"))
-}
-
-#####################################################################################################
-#####  Number of animals controlled. Output file also used for cost calculations    #######
-#####################################################################################################
-
-  if(controlValue == TRUE | animalsControlled == TRUE){
-  warning("Control value calculations are still under development. This operation will only produce a dataframe used to calculate value.")
-    
-  setwd(path0)
-  ## Find all the detail files in the Files_To_Process" directory ##
-  summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_controlSummary.txt", full.names = FALSE)
-  # Read through each controlSummary file 
-  Anim.long <- .import_controlSummaryFiles(summary.files = summary.files, pathfiles = pathfiles, 
-                                           export.datafiles = export.datafiles, path_output = data_output)
-}
-
-  if(completionProportion == TRUE){
-  warning("Control completetion proportion calculations are still under development. Skipping this operation.")
-    
   # setwd(path0)
-  # pathfiles <- file.path("/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Additional_Runs/")
   # ## Find all the detail files in the Files_To_Process" directory ##
-  # summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_controlSummary.txt", full.names = FALSE)
-  # #waitlist.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_waitlistSummary.txt", full.names = FALSE)
-  # 
+  # summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
   # # Read through each controlSummary file 
-  # Anim.long <- .import_controlWaitlistSummaryFiles(summary.files = summary.files, pathfiles =pathfiles, export.datafiles = export.datafiles, path_output = data_output)
+  # # Filter summary files
+  # summary.files <- summary.files[grep("cull_vax_0_-1_earliest_earliest|noControl", summary.files)]
+  # summary.files <- summary.files[grep("newPremReportsOverX|percentIncrease|noControl", summary.files)]
+  # 
+  # detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  # # Read through each controlSummary file 
+  # # Filter summary files
+  # detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
+  # detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
+  # source(paste0(source_files,"animalsInfected.R"))
 }
 
-  if(waitlistInformation == TRUE){
-    warning("Control waitlist calculations are still under development. Skipping this operation.")
-    
-  # setwd(path0)
-  # pathfiles <- file.path("/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Additional_Runs/")
-  # ## Find all the detail files in the Files_To_Process" directory ##
-  # summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_controlSummary.txt", full.names = FALSE)
-  # waitlist.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_waitlistSummary.txt", full.names = FALSE)
-  # 
-  # # Read through each controlSummary file 
-  # Waitlist.long <- .import_waitlistFiles(summary.files = summary.files, waitlist.files = waitlist.files, 
-  #                                        pathfiles = pathfiles, export.datafiles = export.datafiles, 
-  #                                        path_output = data_output)
+#==============================================================================================
+#  Type of spread aka proportion local transmission (Detail Files)  
+#==============================================================================================
+
+if (localSpread == TRUE){
+  if (verbose > 0) {print("Importing local spread function...")}
+  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
+  detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
+  
+  .localSpread(pathfiles = pathfiles, path0 = path0, path_output = plot_output,
+               detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles, 
+               run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
+  
+  if (verbose > 0) {print("Local spread calculations complete.")}
 }
 
-#####################################################################################################
-#####  County Risk (Detail & Summary files)      #######
-#####################################################################################################
-
-  if (countyRisk == TRUE){
-    warning("County risk calculations are still under development. Skipping this operation.")
-    source(paste0(source_files,"countyRisk.R"))
+#==============================================================================================
+# Summary table  
+#==============================================================================================
+if (summaryTable == TRUE){
+  if (verbose > 0) {print("Generating summary table")}
+  
+  num.metrics = sum(exists("Anim_Median_RepType"),exists("Dur_Median_RepType"),exists("EpidExt_Median_RepType"),exists("PremInf_Median_RepType"))
+  
+  metrics = NULL
+  if(exists("Dur_Median_RepType")) {metrics <- c(metrics,"Dur_Median_RepType","Dur_Upper_RepType")}
+  if(exists("PremInf_Median_RepType")) {metrics <- c(metrics,"PremInf_Median_RepType","PremInf_Upper_RepType")}
+  if(exists("Anim_Median_RepType")) {metrics <- c(metrics,"Anim_Median_RepType","Anim_Upper_RepType")}
+  if(exists("EpidExt_Median_RepType")) {metrics <- c(metrics,"EpidExt_Median_RepType","EpidExt_Upper_RepType")}
+  
+  metric.alias = NULL
+  if(exists("Dur_Median_RepType")) {metric.alias <- c(metric.alias,"Duration")}
+  if(exists("PremInf_Median_RepType")) {metric.alias <- c(metric.alias,"Premises Infected")}
+  if(exists("Anim_Median_RepType")) {metric.alias <- c(metric.alias,"Infected Animals")}
+  if(exists("EpidExt_Median_RepType")) {metric.alias <- c(metric.alias,"Epidemic Extent (counties)")}
+  
+  sumtab=NULL
+  
+  for(i in 1:length(metrics)){
+    m <-get(metrics[i])
+    sumtab=cbind(sumtab,m) 
   }
+  
+  colnames(sumtab) <- rep(c("Median", "Upper 2.5%"),num.metrics)
+  rownames(sumtab) <- run.types
+  
+  aboveheader = c( 1 , rep(2, times = length(metric.alias)))
+  names(aboveheader ) = c( "" , metric.alias )
+  
+  setwd(path)
+  save_kable(x= kable(sumtab, "html") %>%
+               kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"), full_width = F, position = "float_right") %>%
+               add_header_above(aboveheader),
+             file=paste0("Summary_Table_",format(Sys.time(),'%Y%m%d_%H%M'),".jpeg"))
+  
+  if (verbose > 0) {print("Summary table complete")}
+}
 
-#####################################################################################################
-#####  Type of spread aka proportion local transmission (Detail Files)  #######
-#####################################################################################################
+if (export.datafiles > 0) {
+  setwd(data_output)
+  save(list = ls(all.names = TRUE), file = "postProcessing_USDOSv2.1_Development.RData")
+  save(run.types,runs_per_ctrl_type,file = "run_information.RData")
+  print("Saving information from postProcessing environment for development")
+} 
 
-  if (localSpread == TRUE){
-    if (verbose > 0) {print("Importing local spread function...")}
-    source(paste0(source_files,"localSpread.R"))
-    
-    .localSpread(pathfiles = pathfiles, path0 = path0, path_output = plot_output,
-                 detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles, 
-                 run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
-    
-    if (verbose > 0) {print("Local spread calculations complete.")}
-  }
-
-#####################################################################################################
-####### Single scenario  #######
-#####################################################################################################
-
-#####################################################################################################
-####### Summary table  #######
-#####################################################################################################
-
-  if (summaryTable == TRUE){
-    if (verbose > 0) {print("Generating summary table")}
-    
-    num.metrics = sum(exists("Anim_Median_RepType"),exists("Dur_Median_RepType"),exists("EpidExt_Median_RepType"),exists("PremInf_Median_RepType"))
-    
-    metrics = NULL
-    if(exists("Dur_Median_RepType")) {metrics <- c(metrics,"Dur_Median_RepType","Dur_Upper_RepType")}
-    if(exists("PremInf_Median_RepType")) {metrics <- c(metrics,"PremInf_Median_RepType","PremInf_Upper_RepType")}
-    if(exists("Anim_Median_RepType")) {metrics <- c(metrics,"Anim_Median_RepType","Anim_Upper_RepType")}
-    if(exists("EpidExt_Median_RepType")) {metrics <- c(metrics,"EpidExt_Median_RepType","EpidExt_Upper_RepType")}
-    
-    metric.alias = NULL
-    if(exists("Dur_Median_RepType")) {metric.alias <- c(metric.alias,"Duration")}
-    if(exists("PremInf_Median_RepType")) {metric.alias <- c(metric.alias,"Premises Infected")}
-    if(exists("Anim_Median_RepType")) {metric.alias <- c(metric.alias,"Infected Animals")}
-    if(exists("EpidExt_Median_RepType")) {metric.alias <- c(metric.alias,"Epidemic Extent (counties)")}
-    
-    sumtab=NULL
-    
-    for(i in 1:length(metrics)){
-      m <-get(metrics[i])
-      sumtab=cbind(sumtab,m) 
-    }
-    
-    colnames(sumtab) <- rep(c("Median", "Upper 2.5%"),num.metrics)
-    rownames(sumtab) <- run.types
-    
-    aboveheader = c( 1 , rep(2, times = length(metric.alias)))
-    names(aboveheader ) = c( "" , metric.alias )
-    
-    setwd(path0)
-    save_kable(x= kable(sumtab, "html") %>%
-                 kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"), full_width = F, position = "float_right") %>%
-                 add_header_above(aboveheader),
-               file=paste0("Summary_Table_",format(Sys.time(),'%Y%m%d_%H%M'),".jpeg"))
-    
-    
-    # Was trying to make 'add_header_above" reactive to the number of metrics, but am havng trouble pasting the required '=2' without quotes. 
-    # Ideally, the table command looks like this (see add_header_above line).
-    # save_kable(x= kable(sumtab, "html") %>%
-    #              kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"), full_width = F, position = "float_right") %>%
-    #              add_header_above(c("",  "Duration (days)" = 2,"Number of IPs" = 2, "Animals Infected" = 2)),  
-    #            file=paste0("Summary_Table_test.jpeg"))
-    
-    if (verbose > 0) {print("Summary table complete")}
-  }
 }
