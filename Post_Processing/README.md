@@ -41,7 +41,7 @@ If you have any questions or comments about this project, please contact the pro
 │   ├── Package_Manager.R
 │   └── Plot_Manager.R
 ├── Files_To_Process
-│   ├── [USDOS output files (summary, detail, etc.) go here]
+│   └── [USDOS output files (summary, detail, etc.) go here]
 ├── FLAPS
 │   ├── FLAPS12_Quarterly_USDOS_format_0001.txt
 │   ├── FLAPS12_Quarterly_USDOS_format_0002.txt
@@ -54,11 +54,11 @@ If you have any questions or comments about this project, please contact the pro
 │   ├── FLAPS12_Quarterly_USDOS_format_0009.txt
 │   └── FLAPS12_Quarterly_USDOS_format_0010.txt
 ├── Maps
-│   ├── [Outbreak maps are put here]
+│   └── [Outbreak maps are put here]
 ├── Data
-│   ├── [Dataframes used for plotting are put here]
+│   └── [Dataframes used for plotting are put here]
 ├── Figures
-│   ├── [Histogram and violin plots are put here]
+│   └── [Histogram and violin plots are put here]
 ├── postProcessing_USDOSv2.1.R
 └── run_postProcessing_USDOSDv2.1.R
 ```

@@ -1,0 +1,69 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+a
+
+
+# Miscellaneous files
+*.r
+.Rapp.history
+*.png
+*.txt
+!config.txt
+*.network
+*.gen
+*.sh
+*.docx
+*.aux
+*.log
+*.gz
+*.tex
+*.xlsx
+*.*~
+
+.DS_Store
+
+# The inputfiles directory except certain files
+inputfiles/*
+!inputfiles/FLAPS_beefdairy_20151201_formatted.txt
+!inputfiles/randomFarms.txt
+!inputfiles/FIPS_20151805.txt
+!inputfiles/fips_weights.txt
+!inputfiles/landfills_formatted.txt
+!inputfiles/covariates_in_rescaled.txt
+!inputfiles/covariates_out_rescaled.txt
+!inputfiles/beef.supernodes
+!inputfiles/dairy.supernodes
+!inputfiles/USAMM_test_parameters.res
+
+# Folders with Doxygen files (can be re-generated using doxyfile)
+html/
+latex/
+
+
+# Codeblocks project files
+*.cscope_file_list
+*.depend
+*.layout
+*.cbp
+bin/
+
+README.html
