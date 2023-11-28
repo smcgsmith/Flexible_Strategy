@@ -1,4 +1,4 @@
-# Flexible_Strategy
+# Supporting Emergency Disease Management with State-Dependent Control
 
 This directory encompasses various components related to the development of the United States Disease Outbreak Simulation (USDOS) pipeline, including post-processing scripts, sensitivity analysis, and the USDOSv2.2.1 module.
 
