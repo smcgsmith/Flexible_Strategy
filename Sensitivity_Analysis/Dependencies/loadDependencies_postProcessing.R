@@ -1,17 +1,27 @@
-#For importing and processing full runs
-library(stats); library(maps);  library(mapdata); library(tidyr); library(fields); library(foreach);
-library(dplyr); library(RColorBrewer); library(rgdal); library(reshape2); library(reshape); library(data.table); library(knitr);
-library(ggplot2); library(ggmap); library(kableExtra); library(magrittr);
-library(tidyverse);library(data.table); library(ggfortify);library(officer);
-library(rvg); require(ggfortify); library(cowplot);library(unikn);library(data.table)
+# List of required packages
+required_packages <- c(
+  "stats", "maps", "mapdata", "tidyr", "fields", "foreach", "dplyr", 
+  "RColorBrewer", "rgdal", "reshape2", "reshape", "data.table", 
+  "knitr", "ggplot2", "ggmap", "kableExtra", "magrittr", "tidyverse",
+  "ggfortify", "officer", "rvg", "cowplot", "unikn", "epiR", "broom",
+  "gplots", "stargazer", "sjPlot", "GGally"
+)
 
-#For importing and processing sensitivity runs
-library(epiR);library(ggplot2);library(tidyverse);library(RColorBrewer);library(broom)
-library(gplots);library(stargazer);library(sjPlot);library(GGally);library(tidyr)
+# Function to check and install packages
+install_missing_packages <- function(packages) {
+  new_packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+  if (length(new_packages) > 0) {
+    install.packages(new_packages, dependencies = TRUE)
+  }
+}
+
+# Check and install missing packages
+install_missing_packages(required_packages)
+
+# Load the packages
+lapply(required_packages, library, character.only = TRUE)
 
 #Colors
-#old post-processing color pallette - could rename new one to keep cbPalette original colors
-#cbPalette <- c("#D55E00", "#CC79A7", "#56B4E9", "#009E73", "#0072B2", "#000000", "#F0E442", "#E69F00", "#E495A5") # Violin plots
 cbPalette <- usecol(pal = c(rev(pal_seeblau), "steelblue", pal_pinky), n = 12, alpha = 1)   # define color palette from 3 colors
 # Sensitivity plot bar colors
 blue<-c('#2171b5')
@@ -28,12 +38,3 @@ colors.long = c("black","black","black",cbPalette[12],
            cbPalette[12],cbPalette[12],cbPalette[12],
            cbPalette[12],cbPalette[12],
            "black","black","black")
-
-# Sensitivity plot labels (models)
-# colors.long.full = c("black","black","black",cbPalette[12],
-#                 cbPalette[12],cbPalette[12],cbPalette[12],
-#                 cbPalette[12],cbPalette[12],cbPalette[12], 
-#                 cbPalette[12],cbPalette[12],cbPalette[12],
-#                 cbPalette[12],cbPalette[12], cbPalette[12],
-#                 cbPalette[12],cbPalette[12], cbPalette[12],
-#                 "black","black","black")

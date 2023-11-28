@@ -1,6 +1,6 @@
-path_trans <- "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Sensitivity/Files_To_Process/"
+path_trans <- "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Sensitivity_Analysis/Files_To_Process/"
 path_output <- "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Sensitivity_Results/"
-path0 <- "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Sensitivity/"
+path0 <- "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Sensitivity_Analysis/"
 
 farmsover<- fread("/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/Sensitivity/farmsOver1000MinFlaps.txt", header = TRUE)
 
@@ -17,7 +17,7 @@ flaps10 <- fread("/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/FLAPS/Quart
 
 
 summary.fnames <- list.files(path = path_trans, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
-
+lhs_par_set <- fread(paste0(path0,"Flex_Files/LHS_Parameters_FlexibleControlSensitivity_2023-06-05.csv"))
 ###################################################################################################
 #### Vaccine Sensitivity
 
@@ -27,17 +27,18 @@ summary.file <- fread(paste0(path_trans, summary.fname), header = TRUE, select =
 summary.file$Type <- unlist(strsplit(summary.fname, "_2022Nov"))[1]
 merger <- merge(summary.file, farmsover, by.x = "Seed_FIPS", by.y = "FIPS", all.x = TRUE)
 summary.file$LargeFarms <- merger$noLargeFarms
-summary.file$par_set <- paste0(unlist(strsplit(summary.file$Type, "_"))[2:6], collapse = "_")
-summary.file$FLAPS <- paste0(unlist(strsplit(summary.file$Type, "_"))[10:14], collapse = "_")
+summary.file$par_set <- paste0(unlist(strsplit(summary.file$Type, "_"))[2:7], collapse = "_")
+summary.file$FLAPS <- paste0(unlist(strsplit(summary.file$Type, "_"))[11:15], collapse = "_")
 
 #First
 flex.file.name <- paste0(summary.file$par_set[1],"_flex.txt")
-flex.file <- fread(paste0(paste0(path0,"/Flex_Files/"),flex.file.name), header = FALSE)
+flex.file <- fread(paste0(paste0(path0,"Flex_Files/"),flex.file.name), header = FALSE)
 summary.file$trigger <- flex.file[2,]$V1
 summary.file$threshold <- flex.file[2,]$V2
 summary.file$action <- flex.file[2,]$V3
 summary.file$target <- flex.file[2,]$V4
 summary.file$priority <- flex.file[2,]$V5
+summary.file$decision.time <- flex.file[2,]$V6
 
 #Second
 summary.file$trigger2 <- flex.file[3,]$V1
@@ -45,6 +46,12 @@ summary.file$threshold2 <- flex.file[3,]$V2
 summary.file$action2 <- flex.file[3,]$V3
 summary.file$target2 <- flex.file[3,]$V4
 summary.file$priority2 <- flex.file[3,]$V5
+summary.file$decision.time2 <- flex.file[3,]$V6
+
+#Reporting time
+summary.file$days.to.index.report <- lhs_par_set$days.to.index.report[which(unique(summary.file$threshold)==lhs_par_set$threshold & unique(summary.file$decision.time) == lhs_par_set$decision.delay)]
+summary.file$days.to.report <- lhs_par_set$days.to.report[which(unique(summary.file$threshold)==lhs_par_set$threshold & unique(summary.file$decision.time) == lhs_par_set$decision.delay)]
+summary.file$days.to.DC.report <- lhs_par_set$days.to.DC.report[which(unique(summary.file$threshold)==lhs_par_set$threshold & unique(summary.file$decision.time) == lhs_par_set$decision.delay)]
 
 #MERGE SUMMARY AND FLAPS FILES--CHECK THAT THESE ARE THE CORRECT VARIABLE NAMES
 summary.file <- if(summary.file$FLAPS == "FLAPS12_Quarterly_USDOS_format_0001"){merge(summary.file, flaps1, by.x = c("Seed_Farms", "Seed_FIPS"), by.y = c("Id", "County_fips"))}else 
@@ -69,24 +76,25 @@ summary.file$Farm.Size <- summary.file$b_Q3 + summary.file$d_Q3
 for(i in 2:length(summary.fnames)){
   summary.fname <- summary.fnames[i]
   summary.res <- fread(paste0(path_trans, summary.fname), header = TRUE, select = c("Rep", "Seed_Farms", "Seed_FIPS", "Num_Inf", "nAffCounties", "Duration", "RunTimeSec"))
-  if(dim(summary.res) == 0){
+  if(any(dim(summary.res)) == 0){
     print("Skipped")
     next
   }
   summary.res$Type <- unlist(strsplit(summary.fname, "_2020Nov"))[1]
   merger <- merge(summary.res, farmsover, by.x = "Seed_FIPS", by.y = "FIPS", all.x = TRUE)
   summary.res$LargeFarms <- merger$noLargeFarms
-  summary.res$par_set <- paste0(unlist(strsplit(summary.res$Type, "_"))[2:6], collapse = "_")
-  summary.res$FLAPS <- paste0(unlist(strsplit(summary.res$Type, "_"))[10:14], collapse = "_")
+  summary.res$par_set <- paste0(unlist(strsplit(summary.res$Type, "_"))[2:7], collapse = "_")
+  summary.res$FLAPS <- paste0(unlist(strsplit(summary.res$Type, "_"))[11:15], collapse = "_")
   
   #First step
   flex.file.name <- paste0(summary.res$par_set[1],"_flex.txt")
-  flex.file <- fread(paste0(paste0(path0,"/Flex_Files/"),flex.file.name), header = FALSE)
+  flex.file <- fread(paste0(paste0(path0,"Flex_Files/"),flex.file.name), header = FALSE)
   summary.res$trigger <- flex.file[2,]$V1
   summary.res$threshold <- flex.file[2,]$V2
   summary.res$action <- flex.file[2,]$V3
   summary.res$target <- flex.file[2,]$V4
   summary.res$priority <- flex.file[2,]$V5
+  summary.res$decision.time <- flex.file[2,]$V6
   
   #Second step
   summary.res$trigger2 <- flex.file[3,]$V1
@@ -94,6 +102,13 @@ for(i in 2:length(summary.fnames)){
   summary.res$action2 <- flex.file[3,]$V3
   summary.res$target2 <- flex.file[3,]$V4
   summary.res$priority2 <- flex.file[3,]$V5
+  summary.res$decision.time2 <- flex.file[3,]$V6
+  
+  #Reporting time
+  summary.res$days.to.index.report <- lhs_par_set$days.to.index.report[which(unique(summary.res$threshold)==lhs_par_set$threshold & unique(summary.res$decision.time) == lhs_par_set$decision.delay)]
+  summary.res$days.to.report <- lhs_par_set$days.to.report[which(unique(summary.res$threshold)==lhs_par_set$threshold & unique(summary.res$decision.time) == lhs_par_set$decision.delay)]
+  summary.res$days.to.DC.report <- lhs_par_set$days.to.DC.report[which(unique(summary.res$threshold)==lhs_par_set$threshold & unique(summary.res$decision.time) == lhs_par_set$decision.delay)]
+  
   
   #MERGE SUMMARY AND FLAPS FILES--CHECK THAT THESE ARE THE CORRECT VARIABLE NAMES
   summary.res <- if(summary.res$FLAPS == "FLAPS12_Quarterly_USDOS_format_0001"){merge(summary.res, flaps1, by.x = c("Seed_Farms", "Seed_FIPS"), by.y = c("Id", "County_fips"))}else 
@@ -177,8 +192,8 @@ head(county.data)
 ##
 ##################################################################################
 
-#usdos <- fread("Sensitivity_Data.csv", header = TRUE)
-usdos <- summary.file
+usdos <- fread("SensitivityData_2023-06-23.csv", header = TRUE)
+#usdos <- summary.file
 
 str(usdos)
 str(county.data)
@@ -195,7 +210,9 @@ colnames(usdos)[colnames(usdos) == "LargeFarms"] = "num.large.prems"
 
 #Scale all of the coefficients:
 #change parameter names as needed
-usdos_scaled <-as.data.frame(usdos %>% mutate_at(vars("premises.size", "density", "out.shipments", "in.shipments", "clustering", "num.large.prems"),
+usdos_scaled <-as.data.frame(usdos %>% mutate_at(vars("premises.size", "density", "out.shipments", "in.shipments", "clustering", "num.large.prems", 
+                                                      "threshold", "threshold2", "decision.time", "decision.time2", "days.to.index.report",
+                                                      "days.to.report", "days.to.DC.report"),
                                                  funs(scale(as.vector(.)))))
 
 usdos_scaled$premises.size <- as.numeric(usdos_scaled$premises.size)
@@ -208,6 +225,11 @@ usdos_scaled$threshold <- as.numeric(usdos_scaled$threshold)
 usdos_scaled$threshold2 <- as.numeric(usdos_scaled$threshold2)
 usdos_scaled$target <- as.factor(usdos_scaled$target)
 usdos_scaled$target2 <- as.factor(usdos_scaled$target2)
+usdos_scaled$decision.time <- as.numeric(usdos_scaled$decision.time)
+usdos_scaled$decision.time2 <- as.numeric(usdos_scaled$decision.time2)
+usdos_scaled$days.to.index.report <- as.numeric(usdos_scaled$days.to.index.report)
+usdos_scaled$days.to.report <- as.numeric(usdos_scaled$days.to.report)
+usdos_scaled$days.to.DC.report <- as.numeric(usdos_scaled$days.to.DC.report)
 
 setwd(path0)
 write.csv(usdos_scaled, paste0(paste0("SensitivityData_Scaled_",Sys.Date()),".csv"), col.names = TRUE) 
