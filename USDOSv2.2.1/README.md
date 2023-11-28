@@ -246,7 +246,7 @@ There are two sections defining control actions. Lines 51-61 define attributes o
 
 \(61) **Control effectiveness** Effectiveness (including compliance) of control types. Pairs of proportions (numeric values in [0,1]) separated by commas, semicolon-separated by control type. The first value in the pair is the control type's probability of preventing exposure in a given transmission event. The second value in the pair is the control type's probability of preventing transmission from an infectious premises in a given transmission event. For control type "shipBan", the first and second numbers should be the same and indicate the probability of a a shipment not occurring due to the ban.
 
-\(62) Unused
+\(62) **State-dependent control** Switches state-dependent control on ("flex") and off ("*"). 
 
 \(63) **Trigger type** Triggers that cause a control action to be applied. Options include
 
@@ -265,7 +265,7 @@ There are two sections defining control actions. Lines 51-61 define attributes o
 
 \(67) **Prioritization** Comma-separated prioritization methods for adding to control waitlists, in the same order as the triggers specified in line 63. Currently only accepts **earliest** for each control type.
 
-\(68) Unused
+\(68) **State-dependent control file location** If line 62 indicates "flex", then the state-dependent control file location must be identified here (e.g. inputfiles/flex.txt).
 
 \(69) Unused 
 
