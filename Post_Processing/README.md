@@ -28,6 +28,7 @@ Within the `processUSDOS()` function, all functions that begin with a `.` (e.g. 
 If you have any questions or comments about this project, please contact the project owner, sm.smith@colostate.edu
 
 ## Directory Tree
+```bash
 .
 ├── Include_Files
 │   ├── Color_Manager.R
@@ -60,3 +61,4 @@ If you have any questions or comments about this project, please contact the pro
 │   ├── [Histogram and violin plots are put here]
 ├── postProcessing_USDOSv2.1.R
 └── run_postProcessing_USDOSDv2.1.R
+```
