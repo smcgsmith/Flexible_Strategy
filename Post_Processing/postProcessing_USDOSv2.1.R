@@ -52,6 +52,7 @@
 #' @param  waitlistInformation
 #' @param  flexibleControl Indicates that there are flexible or state-dependent control runs that will be imported. This is will affect how run type names are parsed. 
 #' @param  verbose Controls the amount of information printed as the function operates (0 = nothing, 1 = debug)
+#' @param  usdos_output_file_path Path to USDOS summary and detail files if not located in a Files_To_Path directory in the current directory. Default is '.'. 
 
 #' @details 
 #' [metric]_min Allows users to plot results excluding simulations below a certain minimum value. For example, since the duration of outbreaks that do not spread is 13 days, setting a Dur_minimal of 13 would generate plots which exclude outbreaks that do not persist beyond the index infection.
@@ -115,7 +116,8 @@ processUSDOS = function(export.datafiles= 0,
                         dataExist = FALSE,
                         flexibleControl = FALSE,
                         verbose = 1,
-                        custom_labels = FALSE
+                        custom_labels = FALSE,
+                        usdos_output_file_path = "."
                        )
 {
 #==============================================================================================
@@ -141,8 +143,15 @@ dir.create(map_output, showWarnings = FALSE) #create directory
 source_files <- file.path(path0,"Source_Files/")
 # Dependency directory location
 dependencies <- file.path(path0,"Include_Files/")
+
 ## Identify all the summary files ##
-pathfiles <- file.path(path0, "Files_To_Process/")
+if (usdos_output_file_path == ".") {
+  ## Identify all the summary files ##
+  pathfiles <- file.path(path0, "Files_To_Process/")
+} else {
+  pathfiles <- file.path(usdos_output_file_path)
+  #pathfiles <- "/Volumes/webblab/Webblab_Storage/DHS/USAMM_USDOS/USDOS/Diagnostics/Fall2023_Diagnostic_Runs/baseResults/"
+} 
 
 # Reset graphical parameters to ensure there are no issues plotting
 graphics.off()
@@ -194,13 +203,18 @@ if (dataExist) {
   }
 }
 
-
-
 colors = .load_colorPalette(plot_color = plot_color, map_color = map_color, num_colors = length(run.types))
 
 cbPalette = colors$plot_color
 palette = colors$map_color
+run_subset = NULL
 custom_names = NULL
+
+if (custom_labels == TRUE) {
+  custom = .edit_runsInPlots(run.types = run.types, run_subset = run_subset, custom_labels = custom_names)
+  custom_names = custom$custom_names
+  run_subset = custom$run_subset
+}
 
 # Error if <100 summary files per run type
 if( runs_per_ctrl_type<100 ) c(warning('At least 100 iterations are required to capture uncertainty in model predictions. Do not analyze fewer than 100 runs.'), rm(county.summary))
@@ -216,52 +230,25 @@ if (duration == TRUE){
   if (verbose > 0) {print("Duration calculations")}
   
   setwd(data_output)
+  data = .generate_dataFiles(county.summary = county.summary, metric = "Duration", summary_file_colname = "Duration",
+                             dataExist = dataExist, export.datafiles = export.datafiles)
   
-  # if re-running after the data files are generated
-  if ((dataExist == TRUE) & ("Duration.csv" %in% list.files()) & ("Duration_long.csv" %in% list.files())) {
-    if (verbose > 0) {print("File exists")}
-    Dur <- read.csv("Duration.csv", header = TRUE)
-    Dur.long <- read.csv("Duration_long.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    Dur=county.summary[,grepl( "fips|polyname|Duration|type" , names( county.summary ) )]
-    
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = Dur, metric = "Duration", dataExist = dataExist, export.datafiles = export.datafiles)
-    Dur = data[[1]]
-    Dur.long = data[[2]]
-  } 
-  
-  if (custom_labels == TRUE) {
-    cat(paste(levels(Dur.long$type), collapse = "\n"),
-        "\n \n \n The order of violin plot labels is listed above.",
-        "\n \n \n Would you like to import new names? If yes, enter a vector of names in the order of the old names (e.g. c(name1,name2,name3,...)",
-        "\n If not, just press `enter` for default names to be used.")
-    # Capture user input for new names
-    custom_names <- readline(prompt = "")
-    
-    # Convert the user input to a vector
-    custom_names <- eval(parse(text = custom_names))
-    
-    if (is.null(custom_names)) {
-      warning("Vector is empty. Using default names", immediate. = TRUE)
-      custom_names <- NULL # just for good measure
-    } else if (length(custom_names) != length(levels(Dur.long$type))) {       # Check if the length matches the number of levels
-      warning("The length of the provided names vector does not match the number of levels. Using default names.", immediate. = TRUE)
-      custom_names <- NULL
-    }
-  }
+  Dur = data[[1]]
+  Dur.long = data[[2]]
   
   if (plots == TRUE) {
     if (verbose > 1) {print("Creating duration plots.")}
     .plot(metric = "Duration", plot_output = plot_output, long_data = Dur.long, 
-          cutoff = Dur_cutoff, min = Dur_min, cbPalette = cbPalette, custom_names = custom_names)
+          cutoff = Dur_cutoff, min = Dur_min, cbPalette = cbPalette, custom_names = custom_names,
+          run_subset = run_subset)
     if (verbose > 0) {print("Duration violin plots generated.")}
   }
   
   if (maps == TRUE) {
     if (verbose > 1) {print("Generating duration maps")}
     .map(metric = "Duration", long_data = Dur.long, wide_data = Dur, min_value = Dur_min,
-          verbose = verbose, map_output = map_output, palette = palette)
+         verbose = verbose, map_output = map_output, palette = palette, run.types = run.types, 
+         runs_per_ctrl_type = runs_per_ctrl_type)
     if (verbose > 0) {print("Duration maps generated.")}
   }
   
@@ -272,91 +259,30 @@ if (duration == TRUE){
 #==============================================================================================
 
 if (premInf == TRUE){
-    
-    if (verbose > 0) {print("Number of infected premises calculations")}
-    
-    setwd(data_output)
-    
-    # if re-running after the data files are generated
-    if ((dataExist == TRUE) & ("PremisesInfected.csv" %in% list.files()) & ("PremisesInfected_long.csv" %in% list.files())) {
-      PremInf <- read.csv("PremisesInfected.csv", header = TRUE)
-      PremInf.long <- read.csv("PremisesInfected_long.csv", header = TRUE)
-    } else { #otherwise proceed as usual
-      PremInf=county.summary[,grepl( "fips|polyname|Num_Inf|type" , names( county.summary ) )]
-      
-      #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-      data = .reshape_data(wide_data = PremInf, metric = "PremisesInfected", dataExist = dataExist, export.datafiles = export.datafiles)
-      PremInf = data[[1]]
-      PremInf.long = data[[2]]
-    }
-    
-    if (plots == TRUE) {
-      if (verbose > 1) {print("Creating number of infected premises plots.")}
-      .plot(metric = "PremInf", plot_output = plot_output, long_data = PremInf.long, 
-            cutoff = PremInf_cutoff, min = PremInf_min, cbPalette = cbPalette, custom_names = custom_names)
-      if (verbose > 0) {print("Number of infected premises plots generated.")}
-    }
-    
-    if (maps == TRUE) {
-      if (verbose > 1) {print("Generating number of infected premises maps")}
-      .map(metric = "PremInf", long_data = PremInf.long, wide_data = PremInf, min_value = PremInf_min, 
-           verbose = verbose, map_output = map_output, palette = palette)
-      if (verbose > 0) {print("Number of infected premises maps generated.")}
-    }
-  }
-
-#==============================================================================================
-# Number of Reported Premises (Summary Files) 
-# Same (mis a part reporting delay) as infected unless there is "diagnostics" 
-#==============================================================================================
-
-if (premReport == TRUE){
-  if (verbose > 0) {print("Number of reported premises calculations")}
+  
+  if (verbose > 0) {print("Number of infected premises calculations")}
   
   setwd(data_output)
+  data = .generate_dataFiles(county.summary = county.summary, metric = "PremisesInfected", summary_file_colname = "Num_Inf",
+                             dataExist = dataExist, export.datafiles = export.datafiles)
   
-  if ((dataExist == TRUE) & ("ReportedPremises.csv" %in% list.files()) & ("ReportedPremises_long.csv" %in% list.files())) {
-    ReportedPrems <- read.csv("ReportedPremises.csv", header = TRUE)
-    ReportedPrems <- read.csv("ReportedPremises_long.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    ReportedPrems = county.summary[,grepl( "fips|polyname|Num_Reports|type" , names( county.summary ) )]
-  }    
+  PremInf = data[[1]]
+  PremInf.long = data[[2]]
   
-  # Identify adjacent "Type" columns and exclude them from the selection
-  deleteme <- c(FALSE, diff(grep("Type", colnames(ReportedPrems))) == 1)
-  ReportedPrems <- ReportedPrems[, !deleteme]
-  
-  deleteme=c(0,rep(NA,ncol(ReportedPrems)-1))
-  
-  # this gets rid of adjacent "type" columns, which indicate that a movement ban wasn't implemented
-  for(i in 2:ncol(ReportedPrems)){
-    deleteme[i]=ifelse(grepl("Type", colnames(ReportedPrems)[i-1]) & grepl("Type", colnames(ReportedPrems)[i])|
-                         grepl("Type", colnames(ReportedPrems)[i]) & grepl("Type", colnames(ReportedPrems)[i+1]),1,0)
+  if (plots == TRUE) {
+    if (verbose > 1) {print("Creating number of infected premises plots.")}
+    .plot(metric = "PremInf", plot_output = plot_output, long_data = PremInf.long, 
+          cutoff = PremInf_cutoff, min = PremInf_min, cbPalette = cbPalette, custom_names = custom_names,
+          run_subset = run_subset)
+    if (verbose > 0) {print("Number of infected premises plots generated.")}
   }
   
-  ReportedPrems=ReportedPrems[,deleteme==0]
-  
-  if (ncol(ReportedPrems)>2) {
-    if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
-    
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = ReportedPrems, metric = "ReportedPremises", dataExist = dataExist, export.datafiles = export.datafiles)
-    ReportedPrems = data[[1]]
-    ReportedPrems.long = data[[2]]
-    
-    if (plots == TRUE ) {
-      if (verbose > 1) {print("Creating number of reported premises plots.")}
-      .plot(metric = "ReportedPrems", plot_output = plot_output, long_data = ReportedPrems.long, 
-            cutoff = ReportedPrems_cutoff, min = ReportedPrems_min, cbPalette = cbPalette, custom_names = custom_names)
-      if (verbose > 0) {print("Number of reported premises plots generated.")}
-    }
-    
-    if (maps == TRUE) {
-      if (verbose > 1) {print("Generating number of infected premises maps")}
-      .map(metric = "ReportedPrems", long_data = ReportedPrems.long, wide_data = ReportedPrems, 
-           min_value = ReportedPrems_min, verbose = verbose, map_output = map_output, palette = palette)
-      if (verbose > 0) {print("Number of reported premises maps generated.")}
-    }
+  if (maps == TRUE) {
+    if (verbose > 1) {print("Generating number of infected premises maps")}
+    .map(metric = "PremInf", long_data = PremInf.long, wide_data = PremInf, min_value = PremInf_min, 
+         verbose = verbose, map_output = map_output, palette = palette, run.types = run.types, 
+         runs_per_ctrl_type = runs_per_ctrl_type)
+    if (verbose > 0) {print("Number of infected premises maps generated.")}
   }
 }
 
@@ -368,33 +294,98 @@ if (epidemicExtent == TRUE){
   if (verbose > 0) {print("Number of affected county calculations")}
   
   setwd(data_output)
+  data = .generate_dataFiles(county.summary = county.summary, metric = "EpidemicExtent", summary_file_colname = "nAffCounties",
+                             dataExist = dataExist, export.datafiles = export.datafiles)
   
-  # if re-running after the data files are generated
-  if ((dataExist == TRUE) & ("EpidemicExtent.csv" %in% list.files()) & ("EpidemicExtent_long.csv" %in% list.files())) {
-    EpidExt <- read.csv("EpidemicExtent.csv", header = TRUE)
-    EpidExt <- read.csv("EpidemicExtent_long.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    EpidExt=county.summary[,grepl( "fips|polyname|nAffCounties|type" , names( county.summary ) )]
-    
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = EpidExt, metric = "EpidemicExtent", dataExist = dataExist, export.datafiles = export.datafiles)
-    EpidExt = data[[1]]
-    EpidExt.long = data[[2]]
-  }
-
+  EpidExt = data[[1]]
+  EpidExt.long = data[[2]]
   
   if (plots == TRUE) {
     if (verbose > 1) {print("Creating number of affected county plots.")}
     .plot(metric = "EpidExt", plot_output = plot_output, long_data = EpidExt.long, 
-          cutoff = EpidExt_cutoff, min = EpidExt_min, cbPalette = cbPalette, custom_names = custom_names)
+          cutoff = EpidExt_cutoff, min = EpidExt_min, cbPalette = cbPalette, custom_names = custom_names,
+          run_subset = run_subset)
     if (verbose > 0) {print("Number of affected county plots generated.")}
   }
   
   if (maps == TRUE) {
     if (verbose > 1) {print("Generating number of affected county maps")}
     .map(metric = "EpidExt", long_data = EpidExt.long, wide_data = EpidExt, min_value = EpidExt_min, 
-         verbose = verbose, map_output = map_output, palette = palette)
+         verbose = verbose, map_output = map_output, palette = palette, run.types = run.types, 
+         runs_per_ctrl_type = runs_per_ctrl_type)
     if (verbose > 0) {print("Number of affected county maps generated.")}
+  }
+}
+
+#==============================================================================================
+# Number of Reported Premises (Summary Files) 
+# Same (mis a part reporting delay) as infected unless there is "diagnostics" 
+#==============================================================================================
+
+if (premReport == TRUE){
+  if (verbose > 0) {print("Number of reported premises calculations")}
+  
+  setwd(data_output)
+  data = .generate_dataFiles(county.summary = county.summary, metric = "ReportedPremises", summary_file_colname = "Num_Reports",
+                             dataExist = dataExist, export.datafiles = export.datafiles)
+  ReportedPrems = data[[1]]
+  ReportedPrems.long = data[[2]]
+  
+  if (ncol(ReportedPrems)>2) {
+    
+    if (plots == TRUE ) {
+      if (verbose > 1) {print("Creating number of reported premises plots.")}
+      .plot(metric = "ReportedPrems", plot_output = plot_output, long_data = ReportedPrems.long, 
+            cutoff = ReportedPrems_cutoff, min = ReportedPrems_min, cbPalette = cbPalette, custom_names = custom_names,
+            run_subset = run_subset)
+      if (verbose > 0) {print("Number of reported premises plots generated.")}
+    }
+    
+    if (maps == TRUE) {
+      if (verbose > 1) {print("Generating number of infected premises maps")}
+      .map(metric = "ReportedPrems", long_data = ReportedPrems.long, wide_data = ReportedPrems, 
+           min_value = ReportedPrems_min, verbose = verbose, map_output = map_output, palette = palette, 
+           run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
+      if (verbose > 0) {print("Number of reported premises maps generated.")}
+    }
+  }
+}
+
+#==============================================================================================
+#  Diagnostics tests completed (Summary file)    
+#==============================================================================================
+
+if (diagnosticTests == TRUE){
+  #Check to ensure diagnostic testing was used in USDOS runs. If not, this section will be skipped
+  diagnostics_on = grepl("Suspect|atRisk|elisa|pcr|highSens|lowSens",run.types) & !all(grepl("noDiagnostics",run.types))
+  
+  if (diagnostics_on) {
+    if (verbose > 0) {print("Diagnostic test calculations")}
+    
+    setwd(data_output)
+    data = .generate_dataFiles(county.summary = county.summary, metric = "DiagTest", summary_file_colname = "Complete",
+                               dataExist = dataExist, export.datafiles = export.datafiles)
+    
+    DiagTest = data[[1]]
+    DiagTest.long = data[[2]]
+    
+    if(ncol(DiagTest)>2){
+      if (verbose > 1) {print("Creating number of diagnostic test plots.")}
+      if (plots == TRUE){
+        .plot(metric = "DiagTest", plot_output = plot_output, long_data = DiagTest.long, 
+              cutoff = DiagTest_cutoff, min = DiagTest_min, cbPalette = cbPalette, custom_names = custom_names,
+              run_subset = run_subset)
+      }
+      
+      if (verbose > 0) {print("Diagnostic test plots generated.")}
+      if (maps == TRUE) {
+        if (verbose > 1) {print("Generating diagnostic test maps")}
+        .map(metric = "DiagTest", long_data = DiagTest.long, wide_data = DiagTest, min_value = DiagTest_min, 
+             verbose = verbose, map_output = map_output, palette = palette, run.types = run.types, 
+             runs_per_ctrl_type = runs_per_ctrl_type)
+        if (verbose > 0) {print("Diagnostic test maps generated.")}
+      }
+    } 
   }
 }
 
@@ -554,62 +545,6 @@ if (premisesVax == TRUE) {
       if (verbose > 0) {print("Number of premises vaccinated maps generated.")}
     }
   }
-}
-
-#==============================================================================================
-#  Diagnostics tests completed (Summary file)    
-#==============================================================================================
-
-if (diagnosticTests == TRUE){
-  
-  if (verbose > 0) {print("Diagnostic test calculations")}
-  
-  setwd(data_output)
-  
-  if ((dataExist == TRUE) & ("DiagTest.csv" %in% list.files()) & ("DiagTest_long.csv" %in% list.files())) {
-    DiagTest <- read.csv("DiagTest.csv", header = TRUE)
-    DiagTest.long <- read.csv("DiagTest_long.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    DiagTest=county.summary[,grepl( "fips|polyname|Complete|type" , names( county.summary ) )]
-  }
-
-  deleteme=c(0,rep(NA,ncol(DiagTest)-1))
-  
-  setwd(data_output)
-  
-  # this gets rid of adjacent "type" columns, which indicate that a cull wasn't implemented
-  for(i in 2:ncol(DiagTest)){
-    deleteme[i]=ifelse(grepl("Type", colnames(DiagTest)[i-1]) & grepl("Type", colnames(DiagTest)[i])|
-                         grepl("Type", colnames(DiagTest)[i]) & grepl("Type", colnames(DiagTest)[i+1]),1,0)
-  }
-  
-  DiagTest=DiagTest[,deleteme==0]
-  
-  if(ncol(DiagTest)>2){
-    if (verbose > 0) {print("Diagnotic test calculations: ncol >2")}
-    
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = DiagTest, metric = "DiagTest", dataExist = dataExist, export.datafiles = export.datafiles)
-    DiagTest = data[[1]]
-    DiagTest.long = data[[2]]
-    
-    if (verbose > 1) {print("Creating number of diagnostic test plots.")}
-    
-    .plot(metric = "DiagTest", plot_output = plot_output, long_data = DiagTest.long, 
-          cutoff = DiagTest_cutoff, min = DiagTest_min, cbPalette = cbPalette)
-    
-    if (verbose > 0) {print("Diagnostic test plots generated.")}
-    
-    if (maps == TRUE) {
-      if (verbose > 1) {print("Generating diagnostic test maps")}
-      .map(metric = "DiagTest", long_data = DiagTest.long, wide_data = DiagTest, min_value = DiagTest_min, 
-           verbose = verbose, map_output = map_output, palette = palette)
-      if (verbose > 0) {print("Diagnostic test maps generated.")}
-    }
-  }
-  
-  # warning("Diagnostic test calculations are still under development. Skipping this operation.")
-  # source(paste0(source_files,"DiagnosticTest.R"))
 }
 
 #==============================================================================================
