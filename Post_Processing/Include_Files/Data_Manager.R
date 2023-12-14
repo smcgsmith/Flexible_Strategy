@@ -65,10 +65,12 @@
     }
   }
   
+  
+  num_cores <- detectCores() - 2
   # Register the parallel backend
   cl <- makeCluster(num_cores)
   registerDoSNOW(cl)
-  iterations = length(detail.fnames)
+  iterations = length(summary.files)
   pb <- txtProgressBar(max = iterations, style = 3)
   progress <- function(n) setTxtProgressBar(pb, n)
   opts <- list(progress = progress)
@@ -366,10 +368,11 @@
     return(run_anim)
   }
   
+  num_cores <- detectCores() - 2
   # Register the parallel backend
   cl <- makeCluster(num_cores)
   registerDoSNOW(cl)
-  iterations = length(detail.fnames)
+  iterations = length(control_file_names)
   pb <- txtProgressBar(max = iterations, style = 3)
   progress <- function(n) setTxtProgressBar(pb, n)
   opts <- list(progress = progress)
