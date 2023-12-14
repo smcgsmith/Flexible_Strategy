@@ -357,7 +357,7 @@ if (premReport == TRUE){
 
 if (diagnosticTests == TRUE){
   #Check to ensure diagnostic testing was used in USDOS runs. If not, this section will be skipped
-  diagnostics_on = grepl("Suspect|atRisk|elisa|pcr|highSens|lowSens",run.types) & !all(grepl("noDiagnostics",run.types))
+  diagnostics_on = any(grepl("Suspect|atRisk|elisa|pcr|highSens|lowSens",run.types) & !all(grepl("noDiagnostics",run.types)))
   
   if (diagnostics_on) {
     if (verbose > 0) {print("Diagnostic test calculations")}
@@ -393,16 +393,31 @@ if (diagnosticTests == TRUE){
 #  List detail files and load FLAPS      
 #==============================================================================================
 
-if(animalsInfected == TRUE | localSpread == TRUE | controlValue == TRUE | 
-   animalsControlled == TRUE | completionProportion == TRUE) {
-  setwd(path0)
+if(animalsInfected == TRUE | localSpread == TRUE | controlValue == TRUE | animalsControlled == TRUE) {
   
+  setwd(path0)
   if (verbose > 0) {print("Finding detail file names and importing FLAPS files")}
   # Imports FLAPS files, finds detail file names, and assigns them all to global environment
   ## Find all the detail files in the Files_To_Process" directory ##
-  # detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
   flaps_file_list <- .import_FLAPS(path0 = path0)
   if (verbose > 0) {print("Detail files found and FLAPS files imported.")}
+}
+
+#==============================================================================================
+#  type of spread aka proportion local transmission (Detail Files)  
+#==============================================================================================
+
+if (localSpread == TRUE){
+  if (verbose > 0) {print("Importing local spread function...")}
+  detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
+  detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
+  
+  .localSpread(pathfiles = pathfiles, path0 = path0, path_output = plot_output,
+               detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles, 
+               run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
+  
+  if (verbose > 0) {print("Local spread calculations complete.")}
 }
 
 #==============================================================================================
@@ -570,60 +585,59 @@ if(animalsInfected == TRUE){
 }
 
 #==============================================================================================
-#  Type of spread aka proportion local transmission (Detail Files)  
-#==============================================================================================
-
-if (localSpread == TRUE){
-  if (verbose > 0) {print("Importing local spread function...")}
-  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
-  detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
-  detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
-  
-  .localSpread(pathfiles = pathfiles, path0 = path0, path_output = plot_output,
-               detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles, 
-               run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
-  
-  if (verbose > 0) {print("Local spread calculations complete.")}
-}
-
-#==============================================================================================
 # Summary table  
 #==============================================================================================
 if (summaryTable == TRUE){
   if (verbose > 0) {print("Generating summary table")}
   
-  num.metrics = sum(exists("Anim_Median_RepType"),exists("Dur_Median_RepType"),exists("EpidExt_Median_RepType"),exists("PremInf_Median_RepType"))
+  num.metrics = sum(duration, premInf, epidemicExtent, animalsInfected, premReport, diagnosticTests, localSpread)
   
-  metrics = NULL
-  if(exists("Dur_Median_RepType")) {metrics <- c(metrics,"Dur_Median_RepType","Dur_Upper_RepType")}
-  if(exists("PremInf_Median_RepType")) {metrics <- c(metrics,"PremInf_Median_RepType","PremInf_Upper_RepType")}
-  if(exists("Anim_Median_RepType")) {metrics <- c(metrics,"Anim_Median_RepType","Anim_Upper_RepType")}
-  if(exists("EpidExt_Median_RepType")) {metrics <- c(metrics,"EpidExt_Median_RepType","EpidExt_Upper_RepType")}
+  metrics <- NULL
   
-  metric.alias = NULL
-  if(exists("Dur_Median_RepType")) {metric.alias <- c(metric.alias,"Duration")}
-  if(exists("PremInf_Median_RepType")) {metric.alias <- c(metric.alias,"Premises Infected")}
-  if(exists("Anim_Median_RepType")) {metric.alias <- c(metric.alias,"Infected Animals")}
-  if(exists("EpidExt_Median_RepType")) {metric.alias <- c(metric.alias,"Epidemic Extent (counties)")}
+  if (duration) {metrics <- c(metrics, "Duration")}
+  if (premInf) {metrics <- c(metrics, "Premises Infected")}
+  if (epidemicExtent) {metrics <- c(metrics, "Epidemic Extent")}
+  if (premReport) {metrics <- c(metrics, "Premises Reported")}
+  if (diagnosticTests) {metrics <- c(metrics, "Diagnostic Tests")}
+  if (animalsInfected) {metrics <- c(metrics, "Animals Infected")}
+  if (localSpread) {metrics <- c(metrics, "Proportion Local Spread")}
   
-  sumtab=NULL
+  all_objects <- ls()
+  long_objects <- grep("\\.long$", all_objects, value = TRUE)
+  long_dataframes <- mget(long_objects)
+  # Add a column with the name of the data frame to each data frame
+  named_long_dataframes <- lapply(names(long_dataframes), function(name) {
+    df <- long_dataframes[[name]]
+    df$DataFrameName <- name
+    return(df)
+  })
+  combined_long_df <- do.call(rbind, named_long_dataframes)
   
-  for(i in 1:length(metrics)){
-    m <-get(metrics[i])
-    sumtab=cbind(sumtab,m) 
-  }
+  sumtab <- combined_long_df %>%
+    group_by(type, DataFrameName) %>%
+    summarise(median = as.numeric(median(Value)), upper = as.numeric(quantile(Value, probs = 0.975, na.rm = TRUE))) %>%
+    ungroup() %>%
+    pivot_wider(
+      names_from = DataFrameName,
+      values_from = c("median", "upper"),
+      names_glue = "{DataFrameName}_{.value}"
+    ) %>%
+    select(type, sort(as.character(names(.))[-1]))
   
-  colnames(sumtab) <- rep(c("Median", "Upper 2.5%"),num.metrics)
-  rownames(sumtab) <- run.types
+  colnames(sumtab)[-1] <- rep(c("Median", "Upper 2.5%"),num.metrics)
   
-  aboveheader = c( 1 , rep(2, times = length(metric.alias)))
-  names(aboveheader ) = c( "" , metric.alias )
+  aboveheader = c(1, rep(2, times = length(metrics)))
+  names(aboveheader) = c("" ,sort(metrics))
   
-  setwd(path)
-  save_kable(x= kable(sumtab, "html") %>%
-               kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"), full_width = F, position = "float_right") %>%
-               add_header_above(aboveheader),
-             file=paste0("Summary_Table_",format(Sys.time(),'%Y%m%d_%H%M'),".jpeg"))
+  setwd(path0)
+  
+  sumtab %>%
+    kable("html") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"),
+                  full_width = F,
+                  position = "float_right") %>%
+    add_header_above(aboveheader) %>%
+    save_kable(paste0("Summary_Table_", Sys.Date(), ".jpeg"))
   
   if (verbose > 0) {print("Summary table complete")}
 }
