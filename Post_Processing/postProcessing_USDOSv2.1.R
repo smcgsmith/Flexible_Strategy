@@ -470,46 +470,34 @@ if(controlValue == TRUE | animalsControlled == TRUE){
 #  Premises Culled (summary)      
 #==============================================================================================
 
-# Problems (fixed, see comments)
+# Does not function properly 12/14/2023 SMS
 if (premisesCulled == TRUE) {
-  if (verbose > 0) {print("Number of premises culled calculations")}
+  warning("The following operations may not work properly. If post-processing fails, try again with premisesCull & premisesVax set to false.")
+  culling_on = any(grepl("cull",run.types) & !all(grepl("noControl",run.types)))
   
-  setwd(data_output)
-  
-  if ((dataExist == TRUE) & ("PremisesCulled.csv" %in% list.files())) {
-    PremCull <- read.csv("PremisesCulled.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    PremCull=county.summary[,grepl( "fips|polyname|cullImplemented|type" , names( county.summary ) )]
-    PremCull=PremCull[,!grepl( "DCSubset" , names( PremCull ) )]
-  }    
-  
-  # Identify adjacent "Type" columns and exclude them from the selection
-  deleteme=c(0,rep(NA,ncol(PremCull)-1))
-  for(i in 2:ncol(PremCull)){
-    deleteme[i]=ifelse(grepl("Type", colnames(PremCull)[i-1]) & grepl("Type", colnames(PremCull)[i])|
-                         grepl("Type", colnames(PremCull)[i]) & grepl("Type", colnames(PremCull)[i+1]),1,0)
-  }
-  PremCull=PremCull[,deleteme==0]
-  
-  if (ncol(PremCull)>2) {
-    if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
+  if (culling_on) {
+    if (verbose > 0) {print("Number of premises culled calculations")}
     
-    # This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = PremCull, metric = "PremisesCulled", dataExist = dataExist, export.datafiles = export.datafiles)
+    setwd(data_output)
+    data = .generate_dataFiles(county.summary = county.summary, metric = "PremisesCulled", summary_file_colname = "cullImplemented",
+                               dataExist = dataExist, export.datafiles = export.datafiles)
+    
     PremCull = data[[1]]
     PremCull.long = data[[2]]
     
-    if (verbose > 1) {print("Creating number of culled premises plots.")}
-    .plot(metric = "PremCull", plot_output = plot_output, long_data = PremCull.long, 
-          cutoff = PremCull_cutoff, min = PremCull_min, cbPalette = cbPalette)
-    
-    if (verbose > 0) {print("Number of culled premises plots generated.")}
-    
-    if (maps == TRUE) {
-      if (verbose > 1) {print("Generating number of culled premises maps")}
-      .map(metric = "PremCull", long_data = PremCull.long, wide_data = PremCull, min_value = PremCull_min, 
-           verbose = verbose, map_output = map_output, palette = palette)
-      if (verbose > 0) {print("Number of culled premises maps generated.")}
+    if (ncol(PremCull)>2) {
+      if (verbose > 1) {print("Creating number of culled premises plots.")}
+      .plot(metric = "PremCull", plot_output = plot_output, long_data = PremCull.long, 
+            cutoff = PremCull_cutoff, min = PremCull_min, cbPalette = cbPalette)
+      
+      if (verbose > 0) {print("Number of culled premises plots generated.")}
+      
+      if (maps == TRUE) {
+        if (verbose > 1) {print("Generating number of culled premises maps")}
+        .map(metric = "PremCull", long_data = PremCull.long, wide_data = PremCull, min_value = PremCull_min, 
+             verbose = verbose, map_output = map_output, palette = palette)
+        if (verbose > 0) {print("Number of culled premises maps generated.")}
+      }
     }
   }
 }
@@ -517,48 +505,36 @@ if (premisesCulled == TRUE) {
 #==============================================================================================
 #  Premises Vaccinated (summary)      
 #==============================================================================================
-
+# Does not function properly 12/14/2023 SMS
 if (premisesVax == TRUE) {
-  if (verbose > 0) {print("Number of premises vaccinated calculations")}
+  warning("The following operations may not work properly. If post-processing fails, try again with premisesCull & premisesVax set to false.")
   
-  setwd(data_output)
+  #Check to ensure vaccines were used in USDOS runs. If not, this section will be skipped
+  vaccination_on = any(grepl("vax",run.types) & !all(grepl("noControl",run.types)))
   
-  if ((dataExist == TRUE) & ("PremisesVax.csv" %in% list.files())) {
-    PremVax <- read.csv("PremisesVax.csv", header = TRUE)
-  } else { #otherwise proceed as usual
-    PremVax=county.summary[,grepl( "fips|polyname|vaxImplemented|type" , names( county.summary ) )]
-    PremVax=PremVax[,!grepl( "DCSubset" , names( PremVax ) )]
-  }    
-  
-  
-  deleteme=c(0,rep(NA,ncol(PremVax)-1))
-  # this gets rid of adjacent "type" columns, which indicate that a cull wasn't implemented
-  for(i in 2:ncol(PremVax)){
-    deleteme[i]=ifelse(grepl("Type", colnames(PremVax)[i-1]) & grepl("Type", colnames(PremVax)[i])|
-                         grepl("Type", colnames(PremVax)[i]) & grepl("Type", colnames(PremVax)[i+1]),1,0)
-  }
-  PremVax=PremVax[,deleteme==0]
-  
-  if (ncol(PremVax)>2) {
-    if (verbose > 0) {print("Number of reported premises calculations: ncol >2")}
+  if (vaccination_on){
+    if (verbose > 0) {print("Number of premises vaccinated calculations")}
     
-    #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
-    data = .reshape_data(wide_data = PremVax, metric = "PremisesVax", dataExist = dataExist, export.datafiles = export.datafiles)
+    setwd(data_output)
+    data = .generate_dataFiles(county.summary = county.summary, metric = "PremisesVax", summary_file_colname = "vaxImplemented",
+                               dataExist = dataExist, export.datafiles = export.datafiles)
     PremVax = data[[1]]
     PremVax.long = data[[2]]
     
-    if (verbose > 1) {print("Creating number of premises vaccinated plots.")}
-    
-    .plot(metric = "PremVax", plot_output = plot_output, long_data = PremVax.long, 
-          cutoff = PremVax_cutoff, min = PremVax_min, cbPalette = cbPalette)
-    
-    if (verbose > 0) {print("Number of premises vaccinated plots generated.")}
-    
-    if (maps == TRUE) {
-      if (verbose > 1) {print("Generating number of premises vaccinated maps")}
-      .map(metric = "PremVax", long_data = PremVax.long, wide_data = PremVax, min_value = PremVax_min, 
-           verbose = verbose, map_output = map_output, palette = palette)
-      if (verbose > 0) {print("Number of premises vaccinated maps generated.")}
+    if (ncol(PremVax)>2) {
+      if (verbose > 1) {print("Creating number of premises vaccinated plots.")}
+      
+      .plot(metric = "PremVax", plot_output = plot_output, long_data = PremVax.long, 
+            cutoff = PremVax_cutoff, min = PremVax_min, cbPalette = cbPalette)
+      
+      if (verbose > 0) {print("Number of premises vaccinated plots generated.")}
+      
+      if (maps == TRUE) {
+        if (verbose > 1) {print("Generating number of premises vaccinated maps")}
+        .map(metric = "PremVax", long_data = PremVax.long, wide_data = PremVax, min_value = PremVax_min, 
+             verbose = verbose, map_output = map_output, palette = palette)
+        if (verbose > 0) {print("Number of premises vaccinated maps generated.")}
+      }
     }
   }
 }
