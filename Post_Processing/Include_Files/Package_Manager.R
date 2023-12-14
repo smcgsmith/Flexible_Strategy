@@ -7,7 +7,7 @@ required_packages <- c(
   "rvg", "ggfortify", "cowplot", "unikn", "data.table",
   "epiR", "ggplot2", "tidyverse", "RColorBrewer", "broom",
   "foreach", "doParallel", "gplots", "stargazer", "sjPlot",
-  "GGally", "tidyr", "ggpubr", "broom"
+  "GGally", "tidyr", "ggpubr", "broom", "doSNOW"
 )
 
 # Install missing packages

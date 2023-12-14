@@ -399,7 +399,7 @@ if(animalsInfected == TRUE | localSpread == TRUE | controlValue == TRUE | animal
   if (verbose > 0) {print("Finding detail file names and importing FLAPS files")}
   # Imports FLAPS files, finds detail file names, and assigns them all to global environment
   ## Find all the detail files in the Files_To_Process" directory ##
-  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
+  detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = TRUE)
   flaps_file_list <- .import_FLAPS(path0 = path0)
   if (verbose > 0) {print("Detail files found and FLAPS files imported.")}
 }
@@ -410,11 +410,12 @@ if(animalsInfected == TRUE | localSpread == TRUE | controlValue == TRUE | animal
 
 if (localSpread == TRUE){
   if (verbose > 0) {print("Importing local spread function...")}
-  detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
-  detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
+  #Load the funcitons necessary for these calculations
+  source(paste0(dependencies,"localSpread.R"))
   
-  .localSpread(pathfiles = pathfiles, path0 = path0, path_output = plot_output,
-               detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles, 
+  # This function generates one long dataframe and maps. Returns the dataframe so it can be used in 
+  .localSpread(pathfiles = pathfiles, path0 = path0, map_output = map_output,
+               detail.fnames = detail.fnames, data_output = data_output, export.datafiles = export.datafiles,
                run.types = run.types, runs_per_ctrl_type = runs_per_ctrl_type)
   
   if (verbose > 0) {print("Local spread calculations complete.")}

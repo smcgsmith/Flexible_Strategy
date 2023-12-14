@@ -27,64 +27,59 @@
   }
   
   run.types = NULL
-  
+  types_to_remove = NULL
   # Create a function for processing a single summary file
   process_summary_file <- function(file,pathfiles,flexibleControl) {
     summary.file.path <- paste0(pathfiles, file)
     summary.res <- fread(summary.file.path, header = TRUE)
+    summary.res <- as.data.frame(summary.res)
+    summary.res$type <- unlist(strsplit(file, "_FLAPS"))[1]
+    summary.res$type <- unlist(strsplit(summary.res$type, "FMD_PTon_Infectious20days_"))[2]
     
     if (dim(summary.res)[1] == 3049) {
       if(colnames(summary.res)[1]=="Rep") {
-        summary.res <- as.data.frame(summary.res)
-        summary.res2 <- summary.res[,-grep("RunTime", colnames(summary.res))] 
-        summary.res2$type <- unlist(strsplit(file, "_FLAPS"))[1]
-        summary.res2$type <- unlist(strsplit(summary.res2$type, "FMD_PTon_Infectious20days_"))[2]
-        #summary.res2$type <- unlist(strsplit(summary.res2$type, "_MvmtBan"))[1]
-        # Lauren changed name of fips column in res2 because diff num rows
-        names(summary.res2)[names(summary.res2) == 'Seed_FIPS'] <- "fips"
+        summary.res <- summary.res[,-grep("RunTime", colnames(summary.res))] 
+        names(summary.res)[names(summary.res) == 'Seed_FIPS'] <- "fips"
         
-        if (flexibleControl){
-          if((FALSE %in% (unlist(str_extract_all(summary.res2$type[1], "[[:digit:]]+")) %in% c(0,1,10000,3000)))){
-            summary.res2$type = paste("flex",summary.res2$type, sep = "_" ) ##add a flexible control identifier if
-          } else if ("newPremReportsOverX" %in% unlist(strsplit(summary.res2$type[1], "_"))) {
-            summary.res2$type = paste("static",summary.res2$type, sep = "_" ) ##add a flexible control identifier if - this assume flex is only run with decrease, percentIncrease, or availability (may not be true in all cases)
-          } else{
-            summary.res2$type = paste("static",summary.res2$type, sep = "_" ) ##add a flexible control identifier if
+        if (flexibleControl){ #this helps sort later
+          if(grepl("percentIncrease|availability|decrease", summary.res$type[1])){
+            summary.res$type = paste("flex",summary.res$type, sep = "_" ) ##add a flexible control identifier if
+          } else if (grepl("newPremReportsOverX|newRegionReportsOverX", summary.res$type[1])) {
+            summary.res$type = paste("static",summary.res$type, sep = "_" ) ##add a flexible control identifier if - this assume flex is only run with decrease, percentIncrease, or availability (may not be true in all cases)
           }
         }
         
-        type = unique(summary.res2$type)
+        type = unique(summary.res$type)
         
         # Return the processed summary file
-        return(list(summary.res2,type))
+        return(list(summary.res,type))
       } else {
         cat("Check header: ", file, "\n")
         stop("Cannot import summary files without a header")
       } 
     } else {
+      type = unique(summary.res$type)
       warning("Summary file not the correct dimensions", immediate. = TRUE)
-      return(list(NULL,NULL))
+      # stop("Summary file not the correct dimensions")
+      return(list(file = NULL, type))
     }
   }
   
-  # Set the number of cores to be used
-  num_cores <- detectCores() - 2  # Set this to the desired number of cores
-  
-  # Register parallel backend
+  # Register the parallel backend
   cl <- makeCluster(num_cores)
-  registerDoParallel(cl)
+  registerDoSNOW(cl)
+  iterations = length(detail.fnames)
+  pb <- txtProgressBar(max = iterations, style = 3)
+  progress <- function(n) setTxtProgressBar(pb, n)
+  opts <- list(progress = progress)
   
   # Use foreach to parallelize the processing of summary files
-  summary_file_type_list <- foreach(i = 1:length(summary.files), .packages = c("data.table","stringr")) %dopar% {
+  summary_file_type_list <- foreach(i = 1:length(summary.files), .packages = c("data.table","stringr"), .options.snow = opts, .errorhandling = "stop") %dopar% {
     file_and_type <- process_summary_file(file = summary.files[i], pathfiles = pathfiles, flexibleControl = flexibleControl)
-    file <- file_and_type[[1]]
-    type <- file_and_type[[2]]
+    # file <- file_and_type[[1]]
+    # type <- file_and_type[[2]]
+    
     return(file_and_type)
-    # if (!is.null(file) | !is.null(type)) {
-    #   return(list(file,type))
-    # } else {
-    #   return(list(NULL,NULL)) #skip loop. this will only happen if summary file dimensions are not correct
-    # }
   }
   
   # Use lapply to extract data frames and character vectors
@@ -109,12 +104,44 @@
   
   county.summary <- merge(county.summary, summary_file_df, by = "fips", all = TRUE)
   
-  # Calculate runs_per_ctrl_type
-  runs_per_ctrl_type <- length(summary.files) / length(unique(run.types))
+  empty_data_frame <- NULL
+  # Use Filter to subset summary_file_type_list
+  empty_data_frames <- Filter(function(x) is.null(x[[1]]), summary_file_type_list)
+  types_to_remove <- unique(unlist(lapply(empty_data_frames, `[[`, 2)))
+  
+  # subset county.summary df if there were incomplete or "weird" summary files imported
+  if (length(types_to_remove) > 0) {
+
+    cat("Removing runs of type(s): ",types_to_remove,"\n because they had either unreadable headers or incorrect dimensions. Check summary files. \n")
+
+    # Find columns with type. prefix
+    type_columns <- grep("^type\\.", names(county.summary), value = TRUE)
+    # Identify columns with values to remove
+    columns_to_remove <- sapply(type_columns, function(col) any(county.summary[[col]] %in% types_to_remove))
+    columns_to_remove <- which(columns_to_remove)
+    # Extract the suffixes from the columns to be removed
+    suffixes_to_remove <- gsub("^type\\.", "", type_columns[columns_to_remove])
+
+    # Identify and remove columns with the same suffix
+    columns_to_remove <- grep(paste(suffixes_to_remove, collapse = "\\b|"), names(county.summary))
+
+    # Remove identified columns
+    county.summary <- county.summary[, -columns_to_remove]
+    # Calculate runs_per_ctrl_type before remove types
+    runs_per_ctrl_type <- length(summary.files) / length(unique(run.types))
+    run.types <- run.types[-which(run.types %in% types_to_remove)]
+    
+  } else {
+    # Calculate runs_per_ctrl_type
+    runs_per_ctrl_type <- length(summary.files) / length(unique(run.types))
+  }
+  
+  # remove runs from run.type vector
   #cat("Runs per ctrl type:",runs_per_ctrl_type, "\n")
   # Assign variables to the global environment for future use. These won't conflict with anything
   assign("runs_per_ctrl_type", runs_per_ctrl_type, envir = .GlobalEnv)
   assign("run.types", unique(run.types), envir = .GlobalEnv)
+  assign("types_to_remove", types_to_remove, .GlobalEnv)
   
   setwd(path_output)
   if (export.datafiles == 1 | export.datafiles == 3) {
@@ -339,15 +366,16 @@
     return(run_anim)
   }
   
-  # Set the number of cores to be used
-  num_cores <- detectCores() - 2  # Set this to the desired number of cores
-  
-  # Register parallel backend
+  # Register the parallel backend
   cl <- makeCluster(num_cores)
-  registerDoParallel(cl)
+  registerDoSNOW(cl)
+  iterations = length(detail.fnames)
+  pb <- txtProgressBar(max = iterations, style = 3)
+  progress <- function(n) setTxtProgressBar(pb, n)
+  opts <- list(progress = progress)
   
   # Use foreach to parallelize the processing of control summary files
-  Anim_list <- foreach(i = 1:length(control_file_names), .packages = c("data.table","stringr","dplyr")) %dopar% {
+  Anim_list <- foreach(i = 1:length(control_file_names), .packages = c("data.table","stringr","dplyr"), .options.snow = opts) %dopar% {
     process_control_summary_file(file_idx = i, pathfiles = pathfiles, 
                                  control_file_names = control_file_names, 
                                  summary_file_names = summary_file_names,
@@ -774,9 +802,7 @@ flaps_file_list <- lapply(1:10, function(flap) {
   long_data <- long_data[,-3]
   long_data <- long_data[!is.na(long_data$Value),] 
   long_data$Value <- as.numeric(long_data$Value)
-  # if (flex == TRUE) {
-  #   long_data <- long_data %>% separate(col = type, remove = F, sep = "_", into = "cType")
-  # }
+  long_data$type <- factor(long_data$type, levels = run.types)
   
   if(!dataExist){
     if (export.datafiles == 1 ) {
@@ -793,6 +819,66 @@ flaps_file_list <- lapply(1:10, function(flap) {
   
 }
 
+.edit_runsInPlots = function(run.types = NULL, run_subset = NULL, custom_labels = NULL){
+  
+    cat("\n =============================================================================================== \n",
+        "Custom labels option is on. \n",
+        "Note: Press enter/return when prompted if you would like to skip the next two operations. \n",
+        "Otherwise, follow the instructions in the prompts given. \n",
+        "===============================================================================================")
+    
+    Sys.sleep(3)
+    
+    # Add numbers in front of each type
+    numbered_types <- paste(seq_along(run.types), run.types, sep = '. ')
+    
+    cat("=========================================================== \n",
+        paste(numbered_types, collapse = "\n"),
+        "\n \n The order of violin plot labels is listed above.",
+        "\n \n Would you like to import new names? If yes, enter a vector of names in the order of the old names (e.g. c(name1,name2,name3,...)",
+        "\n If not, just press `enter` for default names to be used.",
+        "\n ===========================================================")
+    # Capture user input for new names
+    custom_names <- readline(prompt = "")
+    
+    # Convert the user input to a vector
+    custom_names <- eval(parse(text = custom_names))
+    
+    if (is.null(custom_names)) {
+      warning("Vector is empty. Using default names", immediate. = TRUE)
+      custom_names <- NULL # just for good measure
+    } else if (length(custom_names) != length(run.types)) {       # Check if the length matches the number of levels
+      warning("The length of the provided names vector does not match the number of levels. Using default names.", immediate. = TRUE)
+      custom_names <- NULL
+    }
+    
+    cat("\n =========================================================== \n",
+        "Would you like to only plot a subset of USDOS runs? 
+        \n If yes, enter a vector of the runs you would like to keep in the order listed (e.g. c(1,,3,6...)
+        \n If not, just press `enter` for all runs to be plotted. \n",
+        "===========================================================")
+    # Capture user input for new names
+    run_subset <- readline(prompt = "")
+    
+    # Convert the user input to a vector
+    run_subset <- eval(parse(text = run_subset))
+    
+    if (is.null(run_subset)) {
+      warning("Vector is empty. Plotting all runs", immediate. = TRUE)
+      run_subset <- NULL # just for good measure
+    } else if (length(run_subset) == length(run.types)) {
+      warning("Subset of runs is equal to original length. Setting back to default.", immediate. = TRUE)
+      run_subset <- NULL
+    }
+    
+    if (!is.null(run_subset)) {
+      run_subset <- run.types[run_subset]
+    }
+    
+    #run_subset <- run.types[c(5,6,7,8,9,10,11,12,20,21,22,23,24,25,26,27)]
+    
+    return(list(custom_names = custom_names, run_subset = run_subset))
+}
 
 .import_detailFiles = function(){
 
@@ -896,4 +982,80 @@ flaps_file_list <- lapply(1:10, function(flap) {
     Anim=merge(Anim,run.anim, by="Seed_FIPS")
 
   } # End summary/detail file loop
+}
+
+.exclude_adjacentTypeColumns = function(wide_data = NULL) {
+  # Identify adjacent "type" columns and exclude them from the selection
+  deleteme <- c(FALSE, diff(grep("type", colnames(wide_data))) == 1)
+  wide_data <- wide_data[, !deleteme]
+  
+  deleteme=c(0,rep(NA,ncol(wide_data)-1))
+  
+  # this gets rid of adjacent "type" columns, which indicate that a movement ban wasn't implemented
+  for(i in 2:ncol(wide_data)){
+    deleteme[i]=ifelse(grepl("type", colnames(wide_data)[i-1]) & grepl("type", colnames(wide_data)[i])|
+                         grepl("type", colnames(wide_data)[i]) & grepl("type", colnames(wide_data)[i+1]),1,0)
+  }
+  
+  wide_data=wide_data[,deleteme==0]
+  
+  return(wide_data)
+}
+
+# # Identify adjacent "type" columns and exclude them from the selection
+# deleteme <- c(FALSE, diff(grep("type", colnames(ReportedPrems))) == 1)
+# ReportedPrems <- ReportedPrems[, !deleteme]
+# 
+# deleteme=c(0,rep(NA,ncol(ReportedPrems)-1))
+# 
+# # this gets rid of adjacent "type" columns, which indicate that a movement ban wasn't implemented
+# for(i in 2:ncol(ReportedPrems)){
+#   deleteme[i]=ifelse(grepl("type", colnames(ReportedPrems)[i-1]) & grepl("type", colnames(ReportedPrems)[i])|
+#                        grepl("type", colnames(ReportedPrems)[i]) & grepl("type", colnames(ReportedPrems)[i+1]),1,0)
+# }
+# 
+# ReportedPrems=ReportedPrems[,deleteme==0]
+
+.generate_dataFiles = function(county.summary = NULL, metric = NULL, summary_file_colname = NULL, 
+                                     export.datafiles = 3, dataExist = FALSE) {
+  
+  wide_data_name = paste0(metric,".csv")
+  long_data_name = paste0(metric, "_long.csv")
+  data_files_found = (wide_data_name %in% list.files()) & (long_data_name %in% list.files())
+  
+  if (dataExist & data_files_found) {
+    wide_data <- read.csv(wide_data_name, header = TRUE)
+    long_data <- read.csv(long_data_name, header = TRUE)
+  } else { #otherwise proceed as usual
+    wide_data=county.summary[,grepl(paste0("fips|polyname|",summary_file_colname,"|type") , names( county.summary ) )]
+    
+    if (any(grepl("Cull|Vax",metric))) {
+      wide_data=wide_data[,!grepl( "DCSubset" , names( wide_data ) )]
+    }
+    
+    #This function returns a wide dataframe without type columns next to eachother
+    # wide_data = .exclude_adjacentTypeColumns(wide_data = wide_data)
+    if (grepl("ReportedPremises|DiagTest|PremisesVax|PremisesCull",metric)) {
+      if(grepl("ReportedPremises",metric)){
+        # Identify adjacent "type" columns and exclude them from the selection
+        deleteme <- c(FALSE, diff(grep("type", colnames(wide_data))) == 1)
+        wide_data <- wide_data[, !deleteme] 
+      }
+      deleteme=c(0,rep(NA,ncol(wide_data)-1))
+      
+      # this gets rid of adjacent "type" columns, which indicate that a movement ban wasn't implemented
+      for(i in 2:ncol(wide_data)){
+        deleteme[i]=ifelse(grepl("type", colnames(wide_data)[i-1]) & grepl("type", colnames(wide_data)[i])|
+                             grepl("type", colnames(wide_data)[i]) & grepl("type", colnames(wide_data)[i+1]),1,0)
+      }
+      
+      wide_data=wide_data[,deleteme==0]
+    }
+    
+    if(ncol(wide_data)>2){
+      #This function returns a list of two data frames. The first dataframe is wide and the second dataframe is long
+      data = .reshape_data(wide_data = wide_data, metric = metric, dataExist = dataExist, export.datafiles = export.datafiles)
+    }
+  }
+  return(data)
 }
