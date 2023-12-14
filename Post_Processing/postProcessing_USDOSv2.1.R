@@ -540,28 +540,6 @@ if (premisesVax == TRUE) {
 }
 
 #==============================================================================================
-#  Number of Animals Infected (Combines summary and Detail Files)      
-# End result is one line per rep, so treat like a summary metric. 
-#==============================================================================================
-
-if(animalsInfected == TRUE){
-  # setwd(path0)
-  # ## Find all the detail files in the Files_To_Process" directory ##
-  # summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
-  # # Read through each controlSummary file 
-  # # Filter summary files
-  # summary.files <- summary.files[grep("cull_vax_0_-1_earliest_earliest|noControl", summary.files)]
-  # summary.files <- summary.files[grep("newPremReportsOverX|percentIncrease|noControl", summary.files)]
-  # 
-  # detail.fnames <- list.files(path = pathfiles, recursive = TRUE, pattern = "_detail.txt", full.names = FALSE)
-  # # Read through each controlSummary file 
-  # # Filter summary files
-  # detail.fnames <- detail.fnames[grep("cull_vax_0_-1_earliest_earliest|noControl", detail.fnames)]
-  # detail.fnames <- detail.fnames[grep("newPremReportsOverX|percentIncrease|noControl", detail.fnames)]
-  # source(paste0(source_files,"animalsInfected.R"))
-}
-
-#==============================================================================================
 # Summary table  
 #==============================================================================================
 if (summaryTable == TRUE){
