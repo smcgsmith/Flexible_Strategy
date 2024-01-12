@@ -268,19 +268,20 @@
 #'
 #' @export
 #'
-.import_controlSummaryFiles_parallel = function(control_file_names = NULL, summary_file_names = NULL, detail_file_names = NULL, path0 = NULL,
+.import_controlSummaryFiles_parallel = function(control_file_names = NULL, summary_file_names = NULL, detail_file_names = NULL, dependencies = NULL,
                                                 pathfiles = NULL, flaps_file_list, export.datafiles = 1, path_output = NULL, no_control_files = NULL) {
   
   print("Importing USDOS control output files for control cost calculations.")
   cat(length(control_file_names), "files to process.")
 
   # Define a function for processing a single control summary file
-  process_control_summary_file <- function(file_idx, pathfiles, control_file_names,
+  process_control_summary_file <- function(file_idx, pathfiles, control_file_names, dependencies,
                                            summary_file_names, detail_file_names, flaps_file_list) {
     
-    setwd(pathfiles)
     #Need to .extract_runDetailsFromType() function from Data_Manager.R
-    source("../Include_Files/Data_Manager.R")
+    source(paste0(dependencies,"Data_Manager.R"))
+    
+    setwd(pathfiles)
     
     #get file paths and then find the correct files
     control_run_type <- sub("(FLAPS12_Quarterly_USDOS_format_\\d{4}_\\d{2}).*", "\\1", control_file_names[file_idx])
@@ -380,7 +381,8 @@
   # Use foreach to parallelize the processing of control summary files
   Anim_list <- foreach(i = 1:length(control_file_names), .packages = c("data.table","stringr","dplyr"), .options.snow = opts) %dopar% {
     process_control_summary_file(file_idx = i, pathfiles = pathfiles, 
-                                 control_file_names = control_file_names, 
+                                 control_file_names = control_file_names,
+                                 dependencies = dependencies,
                                  summary_file_names = summary_file_names,
                                  detail_file_names = detail_file_names,
                                  flaps_file_list = flaps_file_list)
@@ -757,17 +759,23 @@ flaps_file_list <- lapply(1:10, function(flap) {
 .extract_runDetailsFromType <- function (df) {
   
   if (any(str_detect(df$type[1], "newPremReportsOverX|percentIncrease|decrease|availability"))) {
-    #df$type <- unlist(strsplit(df$type, "_MvmtBan"))[1]
     df <- df %>%
       mutate(type = str_replace(type, ".*_Infectious20days_", "") %>%
                str_remove("_MvmtBan_.*"),
              delay = as.integer(sub('.*_(\\d+)$', '\\1', type)),
-             trigger = as.character(sub('^(\\S+)_.*$', '\\1', type))#,
-             # target = as.character(sub('.*_(\\S+)_\\d+$', '\\1', type))
-             # control_type = case_when(str_detect(type,"percentIncrease|availability|decrease") ~ "State-dependent",
-             #                          str_detect(type,"newPremReportsOverX") ~ "Static"
-             # )
+             control_type = case_when(str_detect(type,"percentIncrease|availability|decrease") ~ "State-dependent",
+                                      str_detect(type,"newPremReportsOverX") ~ "Static"),
+             delay = if_else(is.na(delay), -1, delay),
+             type = str_replace(type, "^[^_]+_[^_]+_", "")
     )
+  } else if (any(str_detect(df$type[1], "noControl"))) {
+    df <- df %>%
+      mutate(delay = "No control",
+             type = str_replace(type, "FMD_.*PTon_Infectious20days_", "") %>%
+               str_remove("_noDiagnostics_.*"),
+             cType = "No control",
+             trigger = "No control"
+      )
   } else {
     df <- df %>%
       mutate(type = str_replace(type, ".*_Infectious20days_", "") %>%

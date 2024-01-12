@@ -53,9 +53,9 @@
   local_scale <- round(c(0, 25, 50, 60, 70, 80, 85, 90, 95, 97.5, 99, 100),2)
   
   # loop over run types
+  print("Generating local spread maps.")
   setwd(map_output)
   for (i in 1:length(unique(TypeSpread.summary$type))){
-    print("Generating local spread maps.")
     name_df=TypeSpread.summary %>% filter(type == unique(TypeSpread.summary$type)[i]) %>% select(SourceCounty, propLocal)
     if(all(colnames(name_df) == c("SourceCounty", "propLocal"))){
       jpeg(paste0(map_output, paste0("PropLocal_",unique(TypeSpread.summary$type)[i],".jpeg"), sep=""), width = 1800, height = 900, units = 'px', res = 100)

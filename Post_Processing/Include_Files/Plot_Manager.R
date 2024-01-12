@@ -1,6 +1,12 @@
 .plot = function (metric = "unknown", plot_output = "Figures/", long_data = NULL, cutoff = 0, min = 0,
-                  cbPalette = NULL, custom_names = NULL) 
+                  cbPalette = NULL, custom_names = NULL, run_subset = NULL) 
 {
+  
+  if (!is.null(run_subset)) {
+    long_data = long_data %>% 
+      filter(type %in% run_subset) %>%
+      mutate(type = factor(type, levels = run_subset))
+  }
   
   ## Divide the data into subsets for plotting/mapping ##
   overMin <- long_data[long_data$Value > min,]
@@ -36,7 +42,7 @@
     plot_labels = levels(long_data$type)
   }
   
-  cat("Plot labels will be: ", paste(plot_labels, collapse = "\n"))
+  # cat("Plot labels will be: ", paste(plot_labels, collapse = "\n"))
 
   ## violin plots ##
   jpeg(paste0(metric,"_overMin_violin.jpeg"), width = 1800, height = 900, units = 'px', res = 100)
