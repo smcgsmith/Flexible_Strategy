@@ -28,7 +28,7 @@
   path0 <- dirname(rstudioapi::getActiveDocumentContext()$path)
   path_output <- file.path(path0, "Output_Files/")
   dependencies <- file.path(path0,"Dependencies/")
-  
+  data_output <- file.path(path0, "Data/")
   # source(paste0(dependencies,"loadDependencies_postProcessing.R"))
   # source(paste0(dependencies,"map_by_fips_standalone.R"))
   
@@ -798,4 +798,51 @@ Dur %>%
         axis.title.y = element_text(size = 32),
         axis.text.x = element_text(size = 28),
         axis.title.x = element_text(size = 32))
+dev.off()
+
+
+#===============================================================================
+#
+# Prioritization
+#
+#===============================================================================
+setwd(data_output)
+pattern <- 'smallest|largest|closest|farthest|cull_vax_0_-1_earliest_earliest_3_3|cull_vax_0_-1_earliest_earliest_0_0|cull_vax_0_3000_earliest_earliest_0_0|cull_vax_0_3000_earliest_earliest_3_3'
+PremInf.long <- fread("/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/Post_Processing_Rework/Data/PremisesInfected_long.csv")
+# Filter rows based on the 'type' column
+PremInf_filtered <- PremInf.long[grep(pattern, type, ignore.case = TRUE), ]
+
+PremInf <- PremInf_filtered %>%
+  mutate(metric = "Number of infected premises",
+         control_type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
+                           str_detect(type, "flex") ~ "State-dependent control",
+                           str_detect(type, "static") ~ "Static control"),
+         priority = case_when(str_detect(type,"largest") ~ "Largest",
+                              str_detect(type,"smallest") ~ "Smallest",
+                              str_detect(type,"earliest") ~ "Earliest",
+                              str_detect(type,"closest") ~ "Closest",
+                              str_detect(type,"farthest") ~ "Farthest"),
+         type = case_when(str_detect(type,"cull_vax_0_-1") ~ "MB, IP Cull, DC Vax",
+                          str_detect(type,"cull_vax_0_3000") ~ "MB, IP Cull, 3km Vax"))
+
+PremInf <- PremInf %>%
+  filter(Value > PremInf_cutoff) %>%
+  drop_na()
+
+setwd(plot_output)
+jpeg("Priortization_PremInfHigh.jpeg", width = 1500, height = 1800, units = 'px', res = 100)
+PremInf %>%
+  ggplot(aes(x = type, y = Value, fill = priority)) +
+  geom_violin()+
+  theme_bw() +
+  labs(y = "Number of infected premises", x = "Control strategy", colour = "Priority", fill = "Priority") + 
+  theme(axis.text.y = element_text(size = 28),
+        axis.title.y = element_text(size = 32),
+        axis.text.x = element_text(size = 28),
+        axis.title.x = element_text(size = 32),
+        strip.text.x.top = element_text(size = 28),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 24),
+        legend.position = c(0.9,0.9)) +
+  facet_grid(~control_type)
 dev.off()
