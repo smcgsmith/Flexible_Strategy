@@ -18,8 +18,6 @@ processUSDOS(export.datafiles = 3,
              plots = F,
              maps = F,
              dataExist = T,
-             custom_labels = F,
-             usdos_output_file_path = "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Post_Processing/Files_To_Process/"
-             )
+             custom_labels = F)
 
 save(file = "postProcessing_USDOSv2.1.RData")
