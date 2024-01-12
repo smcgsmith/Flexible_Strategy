@@ -4,24 +4,22 @@ source("postProcessing_USDOSv2.1.R")
 
 processUSDOS(export.datafiles = 3,
              summaryTable = F,
-             duration = T,
-             premInf = T,
-             premReport = T,
-             epidemicExtent = T,
-             premisesCulled = F,
-             premisesVax = F,
+             duration = F,
+             premInf = F,
+             premReport = F,
+             epidemicExtent = F,
              diagnosticTests = F,
              animalsInfected = F,
-             countyRisk = F,
              localSpread = F,
-             plot_color = "color_red",
-             map_color = "color_red",
-             ls_match = TRUE,
-             controlValue = F,
+             premisesCulled = F,
+             premisesVax = F,
+             controlValue = T,
              animalsControlled = F,
-             plots = T,
-             maps = FALSE,
-             verbose = 1,
-             dataExist = F)
+             plots = F,
+             maps = F,
+             dataExist = T,
+             custom_labels = F,
+             usdos_output_file_path = "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Post_Processing/Files_To_Process/"
+             )
 
 save(file = "postProcessing_USDOSv2.1.RData")
