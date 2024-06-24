@@ -1,3 +1,5 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ef7f69af48040e86529376117942577b9a00a0ccd877a01714c74f6a40cf2704
-size 120
+newRegionReportsOverX	0	shipBan	0	earliest	0
+percentIncrease	0	cull	0	earliest	3
+percentIncrease	10	vax	-1	earliest	3
+
+
