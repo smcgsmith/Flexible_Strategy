@@ -1,1 +1,2 @@
-*.txt filter=lfs diff=lfs merge=lfs -text
+landfills*.txt filter=lfs diff=lfs merge=lfs -text
+FLAPS*.txt filter=lfs diff=lfs merge=lfs -text
