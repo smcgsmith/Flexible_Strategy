@@ -185,11 +185,11 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   # Shipment
   shipment.gen <- 5
   shipment.scale <- 1
-  usamm.posteriors <- "inputfiles/beef_k3_cov.post, inputfiles/dairy_k3_cov.post"
   usamm.order <- "Q1,Q2,Q3,Q4"
   usamm.day <- "1,91,182,274"
-  usamm.origin.cov <- "inputfiles/county_covariates_scaled_mean_zero.txt,inputfiles/county_covariates_scaled_mean_zero.txt"
-  usamm.dest.cov <-   "inputfiles/county_covariates_scaled_mean_zero.txt,inputfiles/county_covariates_scaled_mean_zero.txt"
+  usamm.posteriors <- "inputfiles/USAMMv3_beef_posterior.txt,inputfiles/USAMMv3_dairy_posterior.txt"
+  usamm.origin.cov <- "inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt"
+  usamm.dest.cov <- "inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt"
   
   exp.ship <-1 # only affects FMD
   
@@ -761,10 +761,6 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   }
 }
 
-
-
-
-
 #==================================================================================================================
 #==================================================================================================================
 #
@@ -772,23 +768,16 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
 #
 #==================================================================================================================
 #==================================================================================================================
+# Adaptive control: IP Cull DC Vax
+createConfigs(run.control = "flex",
+              flex.file.name = "inputfiles/flex_IPDC_CullVax.txt")
 
-createConfigs(slurm=1,
-              verbose=0,
-              run.control = "flex",
-              flex.file.name = "inputfiles/flex_IPDC_CullVax.txt",
-              partial.param="0.05,0.006,0.44,4,6.27237",
-              usamm.posteriors="inputfiles/USAMMv3_beef_posterior.txt,inputfiles/USAMMv3_dairy_posterior.txt",
-              usamm.origin.cov="inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt",
-              usamm.dest.cov="inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt",
-              market.within = 0.5)
+# Adaptive control: IP Cull DC Cull
+createConfigs(run.control = "flex",
+              flex.file.name = "inputfiles/flex_IPDC_CullCull.txt")
 
-createConfigs(slurm=1,
-              verbose=0,
-              run.control = "flex",
-              flex.file.name = "inputfiles/flex_IPDC_CullCull.txt",
-              partial.param="0.05,0.006,0.44,4,6.27237",
-              usamm.posteriors="inputfiles/USAMMv3_beef_posterior.txt,inputfiles/USAMMv3_dairy_posterior.txt",
-              usamm.origin.cov="inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt",
-              usamm.dest.cov="inputfiles/USAMMv3_cattle_covariates.txt, inputfiles/USAMMv3_cattle_covariates.txt",
-              market.within = 0.5)
+# Fixed control: IP Cull DC Vax
+createConfigs(run.control = "MB_IPDCcull")
+
+# Fixed control: IP Cull DC Cull
+createConfigs(run.control = "MB_cullVax")
