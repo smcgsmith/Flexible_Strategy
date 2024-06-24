@@ -356,8 +356,8 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
     ctrl.trigger.threshold <- gsub(" ","",toString(flexFile$V2[1:length(unique(flexFile$V3))]))
     flex.file <- "flex"
     ctrl.response.target <- gsub(" ","",toString(flexFile$V4[1:length(unique(flexFile$V3))]))
-    mb.eff <- 0.75 
-    
+    mb.eff <- 0.75
+
     if("cull" %in% unique(flexFile$V3)){
       cull.eff <- 1
       if(all(flexFile[flexFile$V3=="cull",]$V4>1)){
@@ -368,10 +368,10 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
       ctrl.constraint.type <-  "noLimit,stateSum"
       ctrl.scale <- "state,premises"
     }
-    
+
     if("vax" %in% unique(flexFile$V3)){
       vaccine.file <-  "vaccineBankUpdated.txt"
-      vax.rate <- 6804 
+      vax.rate <- 6804
       vax.rate.sd <- 0
       vax.eff <- 0.9
       if(all(flexFile[flexFile$V3=="vax",]$V4>1)){
@@ -382,12 +382,12 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
       ctrl.constraint.type <-  "noLimit,nationalLimit"
       ctrl.scale <- "state,premises"
     }
-    
+
     if("vax" %in% (flexFile$V3) & "cull" %in% unique(flexFile$V3)){
       ctrl.constraint.type <-  "noLimit,stateSum,nationalLimit"
       ctrl.scale <- "state,premises,premises"
     }
-    
+
     flexFile[] <- lapply(flexFile, as.character)
     if(dim(flexFile)[1]>3){
       flex.sens.control = sapply(flexFile[(dim(flexFile)[1]-1):dim(flexFile)[1],], as.character)
@@ -522,9 +522,17 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   
   # Generate batch.name if one isn't provided. Add pieces to output filenames here (ex for FMD, whether partial transition is on and the ifnectous period).
   # This batch.name is what's used in post-processing to determine unique run types
-  batch.name = ifelse(batch.name =="",paste0("FMD_",ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
+  batch.name = if(run.control == "flex"){
+    batch.name = ifelse(batch.name =="",paste0(ifelse(disease==0,"FMD","bTB"),"_",
+                                               ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
+                                               ifelse(run.control == "flex", flex.control, run.control),"_",
+                                               ifelse(MvmtBan == "","",MvmtBan),
+                                               ifelse(ShipOff == "","",ShipOff)), batch.name)
+  } else {
+    ifelse(batch.name =="",paste0("FMD_",ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
                                              run.control,"_",ifelse(vax == "","",vax),ifelse(MvmtBan == "","",MvmtBan),ifelse(ShipOff == "","",ShipOff)),
                       batch.name)
+  }
   
   ## Create the replacement_df data frame that contains all of the information created by this function.  ####
   config.fname <- paste0("config_", batch.name, "_",
@@ -579,65 +587,98 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
                                    if (run.control == "MB") {0} else
                                      if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0("0;",cull.rate,",",cull.rate.sd)} else
                                        if (run.control == "MB_cullVax" ){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)} else
-                                         if (run.control == "IPcull") {paste0(cull.rate,",",cull.rate.sd)},
+                                         if (run.control == "IPcull") {paste0(cull.rate,",",cull.rate.sd)} else
+                                           if (run.control == "flex"){
+                                             if("shipBan,cull" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd)} else
+                                               if("shipBan,vax,vax" == ctrl.type){paste0("0;",vax.rate,",",vax.rate.sd,";",vax.rate,",",vax.rate.sd)} else 
+                                                 if("shipBan,cull,vax" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)}},
                                ctrl.scale = ctrl.scale,
                                ctrl.constraint.files = if(run.control == "other") {ctrl.constraint.files} else 
                                  if (run.control == "noControl") {"NA"} else
                                    if (run.control == "MB") {"NA"} else
                                      if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0("NA;inputfiles/",landfill.file.names)} else
                                        if (run.control == "MB_cullVax"){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)} else
-                                         if (run.control == "IPcull") {paste0("inputfiles/", landfill.file.names)},
+                                         if (run.control == "IPcull") {paste0("inputfiles/", landfill.file.names)} else
+                                           if (run.control == "flex"){
+                                             if("shipBan,cull" == ctrl.type){paste0("NA;inputfiles/", landfill.file.names)} else
+                                               if("shipBan,vax" == ctrl.type){paste0("NA;inputfiles/",vaccine.file)} else 
+                                                 if("shipBan,cull,vax" == ctrl.type){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)}},
                                ctrl.constraint.filetypes = if(run.control == "other") {ctrl.constraint.filetypes} else 
                                  if (run.control == "noControl") {"NA"} else
                                    if (run.control == "MB") {"NA"} else
                                      if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull" ){"NA;resourceLocs"} else
                                        if (run.control == "MB_cullVax"){"NA;resourceLocs;resourceBoosts"} else
-                                         if (run.control == "IPcull") {"resourceLocs"},
+                                         if (run.control == "IPcull") {"resourceLocs"} else
+                                           if (run.control == "flex"){
+                                             if("shipBan,cull" == ctrl.type){"NA;resourceLocs"} else
+                                               if("shipBan,vax" == ctrl.type){"NA;resourceBoosts"} else 
+                                                 if("shipBan,cull,vax" == ctrl.type){"NA;resourceLocs;resourceBoosts"}},
                                effective.mean = if(run.control == "other") {effective.mean} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {effective.mb} else
                                      if (run.control == "MB_IPcull" ) {paste0(effective.mb,",",effective.cull)} else
                                        if (run.control == "MB_IPDCcull") {paste0(effective.mb,",",effective.cull)} else
                                          if (run.control == "MB_cullVax") {paste0(effective.mb,",",effective.cull,",",effective.vax)} else
-                                           if (run.control == "IPcull") {effective.cull},
+                                           if (run.control == "IPcull") {effective.cull} else
+                                             if (run.control == "flex"){
+                                               if("shipBan,cull" == ctrl.type){paste0(effective.mb,",",effective.cull)} else
+                                                 if("shipBan,vax" == ctrl.type){paste0(effective.mb,",",effective.vax)} else 
+                                                   if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb,",",effective.cull,",",effective.vax)}},
                                effective.sd = if(run.control == "other") {effective.mean.sd} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {effective.mb.sd} else
                                      if (run.control == "MB_IPcull" ) {paste0(effective.mb.sd,",",effective.cull.sd)} else
                                        if (run.control == "MB_IPDCcull") {paste0(effective.mb.sd,",",effective.cull.sd)} else
                                          if (run.control == "MB_cullVax") {paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)} else
-                                           if (run.control == "IPcull") {effective.cull.sd},
+                                           if (run.control == "IPcull") {effective.cull.sd} else 
+                                             if (run.control == "flex"){
+                                               if("shipBan,cull" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd)} else
+                                                 if("shipBan,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.vax.sd)} else 
+                                                   if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)}},
                                inactive.mean = if(run.control == "other") {inactive.mean} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {inactive.mb} else
                                      if (run.control == "MB_IPcull" ) {paste0(inactive.mb,",",inactive.cull)} else
                                        if (run.control == "MB_IPDCcull") {paste0(inactive.mb,",",inactive.cull)} else
                                          if (run.control == "MB_cullVax") {paste0(inactive.mb,",",inactive.cull,",",inactive.vax)} else
-                                           if (run.control == "IPcull") {inactive.cull},
+                                           if (run.control == "IPcull") {inactive.cull} else 
+                                             if (run.control == "flex"){
+                                               if("shipBan,cull" == ctrl.type){paste0(inactive.mb,",",inactive.cull)} else
+                                                 if("shipBan,vax" == ctrl.type){paste0(inactive.mb,",",inactive.vax)} else 
+                                                   if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb,",",inactive.cull,",",inactive.vax)}},
                                inactive.sd = if(run.control == "other") {inactive.mean.sd} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {inactive.mb.sd} else
                                      if (run.control == "MB_IPcull" ) {paste0(inactive.mb.sd,",",inactive.cull.sd)} else
                                        if (run.control == "MB_IPDCcull") {paste0(inactive.mb.sd,",",inactive.cull.sd)} else
                                          if (run.control == "MB_cullVax") {paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)} else
-                                           if (run.control == "IPcull") {inactive.cull.sd},
+                                           if (run.control == "IPcull") {inactive.cull.sd} else 
+                                             if (run.control == "flex"){
+                                               if("shipBan,cull" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd)} else
+                                                 if("shipBan,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.vax.sd)} else 
+                                                   if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)}},
                                ctrl.response.target = if(run.control == "other") {ctrl.response.target} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {0} else
                                      if (run.control == "MB_IPcull" ) {"0,0"} else
                                        if (run.control == "MB_IPDCcull") {"0,0,-1"} else
                                          if (run.control == "MB_cullVax") {paste0("0,0,",vax.range)} else
-                                           if (run.control == "IPcull") {"0"},
+                                           if (run.control == "IPcull") {"0"} else 
+                                             if (run.control == "flex"){ctrl.response.target},
                                ctrl.triggers = ctrl.triggers,
                                ctrl.eff = if(run.control == "other") { ctrl.eff} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {paste0(mb.eff, ",", mb.eff)} else
                                      if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
                                        if (run.control == "MB_cullVax" ){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)} else
-                                         if (run.control == "IPcull") {paste0(cull.eff, ",", cull.eff)},
+                                         if (run.control == "IPcull") {paste0(cull.eff, ",", cull.eff)} else
+                                           if (run.control == "flex"){
+                                             if("shipBan,cull" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
+                                               if("shipBan,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";", vax.eff, ",", vax.eff)} else 
+                                                 if("shipBan,cull,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)}},
                                ctrl.trigger.threshold = ctrl.trigger.threshold,
                                ctrl.trigger.response = ctrl.trigger.response,
-                               ctrl.response.priority = if (run.control == "other") {ctrl.response.priority} else
+                               ctrl.response.priority = if (run.control == "other" | run.control == "flex") {ctrl.response.priority} else
                                  if (run.control == "noControl" | run.control == "MB" | run.control == "IPcull") {"earliest"} else
                                    if (run.control == "MB_IPcull") {paste0("earliest",",","earliest")} else
                                      if (run.control == "MB_IPDCcull" | run.control == "MB_cullVax") {paste0( "earliest",",","earliest",",","earliest")},
