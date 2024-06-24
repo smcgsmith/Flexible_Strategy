@@ -26,7 +26,7 @@ a
 *.r
 .Rapp.history
 *.png
-*_00*.txt
+*.txt
 !config.txt
 *.network
 *.gen
@@ -53,6 +53,9 @@ inputfiles/*
 !inputfiles/beef.supernodes
 !inputfiles/dairy.supernodes
 !inputfiles/USAMM_test_parameters.res
+!inputfiles/USAMMv3*.txt
+!inputfiles/vaccineBankUpdated.txt
+!inputfiles/flex*.txt
 
 # Folders with Doxygen files (can be re-generated using doxyfile)
 html/
