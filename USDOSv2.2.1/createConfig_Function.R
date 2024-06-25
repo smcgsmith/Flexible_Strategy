@@ -24,6 +24,7 @@
 #' @param summary (2) Generate a file with summary information about each seeded outbreak (0 = no, 1 = yes (default))
 #' @param detail (3) Generate a detail file withinformation on each exposure event (0 = no, 1 = yes (default))
 #' @param print.grid (4) Print grid cells on/off (0 = no (default), 1 = yes )
+#' @param print.control (6) Print control summary (0=off, 1=premises level)
 #' @param flaps (11) The subname of the FLAPS version being used. For example, 'flaps12_min' will use the files with a naming pattern 'flaps12_min_00XX.txt'
 #' @param species (12) List of species for which counts are provided in premises file, comma-separated. Default is "beef,dairy".
 #' @param timesteps (13) The number of timesteps to run for each seeded outbreak. The timestep is days for foot and mouth disease (FMD).
@@ -134,7 +135,7 @@
 ######################################################
 ## Start Function ##
 
-createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, disease = 0, ...){ 
+createConfigs <- function(run.control = "noControl", disease = 0, flex.file.name = "*", ...){ 
   
   options(scipen=3)  
   
@@ -155,6 +156,7 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   summary <- 1
   detail <- 1
   print.grid <- 0
+  print.control <- 0
   
   flaps <- "FLAPS12_Quarterly_USDOS_format"
   species <- "beef,dairy"
@@ -248,7 +250,7 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   ctrl.constraint.files <- NULL
   ctrl.constraint.filetypes <- NULL
   
-  flex.file <- NA
+  flex.file <- "*"
   ctrl.triggers <- "*" 
   ctrl.trigger.threshold <- 0
   ctrl.trigger.response <-"*"
@@ -405,7 +407,7 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   
   ## List of all allowed function inputs 
   additional.inputs = list(...)
-  parameter.options = c("template.config.location", "sh.template", "jobfile.name", "summary","detail","print.grid","flaps", 
+  parameter.options = c("template.config.location", "sh.template", "jobfile.name", "summary","detail","print.grid","print.control","flaps", 
                         "species","xy","start.day","landfill.files", "landfill.file.name","vaccination.file",
                         "fips.info", "reps", "cutoff", "timesteps", "source", "filetype", "parameter.sample", 
                         "k1", "k2", "k3","susc.exp.sp1","susc.exp.sp2","transm.exp.sp1", "susc.const.sp1","susc.const.sp2","transm.const.sp1","transm.const.sp2", 
@@ -522,14 +524,14 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   
   # Generate batch.name if one isn't provided. Add pieces to output filenames here (ex for FMD, whether partial transition is on and the ifnectous period).
   # This batch.name is what's used in post-processing to determine unique run types
-  batch.name = if(run.control == "flex"){
+  if(run.control == "flex"){
     batch.name = ifelse(batch.name =="",paste0(ifelse(disease==0,"FMD","bTB"),"_",
                                                ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
                                                ifelse(run.control == "flex", flex.control, run.control),"_",
                                                ifelse(MvmtBan == "","",MvmtBan),
                                                ifelse(ShipOff == "","",ShipOff)), batch.name)
   } else {
-    ifelse(batch.name =="",paste0("FMD_",ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
+    batch.name = ifelse(batch.name =="",paste0("FMD_",ifelse(disease==0,paste0(ifelse(partial==1,"PTon","PToff"),"_Infectious",infectious,"days")),"_",
                                              run.control,"_",ifelse(vax == "","",vax),ifelse(MvmtBan == "","",MvmtBan),ifelse(ShipOff == "","",ShipOff)),
                       batch.name)
   }
@@ -541,11 +543,12 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   
   jobname <- paste0("MI_",batch.name,"_f", sprintf("%02d", rep(1:10, each=10)), "_", 
                     sprintf("%02d", rep(1:10),"_", sens.number), format(Sys.time(), '_%Y%m%d'))
-  
+
   replacement.df <- data.frame(config.fname, jobname, 
                                summary = summary,
                                detail = detail,
                                print.grid = print.grid,
+                               print.control = print.control,
                                FLAPS.locations = paste0("FLAPS/", all.flaps.names), 
                                species = species,
                                timesteps = paste0(timesteps),
@@ -585,171 +588,200 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
                                ctrl.constraint = if(run.control == "other") {ctrl.constraint <- ctrl.constraint} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {0} else
-                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0("0;",cull.rate,",",cull.rate.sd)} else
+                                     if (run.control == "MB_IPcull" | run.control == "MB_IPDCcull" | run.control == "flex_MBcull"){paste0("0;",cull.rate,",",cull.rate.sd)} else
                                        if (run.control == "MB_cullVax" ){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)} else
-                                         if (run.control == "IPcull") {paste0(cull.rate,",",cull.rate.sd)} else
-                                           if (run.control == "flex"){
-                                             if("shipBan,cull" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd)} else
-                                               if("shipBan,vax,vax" == ctrl.type){paste0("0;",vax.rate,",",vax.rate.sd,";",vax.rate,",",vax.rate.sd)} else 
-                                                 if("shipBan,cull,vax" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)}},
+                                         if (run.control == "flex_cullVax" ){paste0(cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)} else
+                                           if (run.control == "IPcull" | run.control == "flex_cull") {paste0(cull.rate,",",cull.rate.sd)} else
+                                             if (run.control == "flex_MBcullVax"){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)} else
+                                               if (run.control == "flex_MBvax"){paste0("0;",vax.rate,",",vax.rate.sd)} else
+                                                 if (run.control == "flex"){
+                                                   if("shipBan,cull" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd)} else
+                                                     if("shipBan,vax,vax" == ctrl.type){paste0("0;",vax.rate,",",vax.rate.sd,";",vax.rate,",",vax.rate.sd)} else 
+                                                       if("shipBan,cull,vax" == ctrl.type){paste0("0;",cull.rate,",",cull.rate.sd,";",vax.rate,",",vax.rate.sd)}},
                                ctrl.scale = ctrl.scale,
                                ctrl.constraint.files = if(run.control == "other") {ctrl.constraint.files} else 
                                  if (run.control == "noControl") {"NA"} else
                                    if (run.control == "MB") {"NA"} else
-                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0("NA;inputfiles/",landfill.file.names)} else
+                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull" | run.control == "flex_MBcull"){paste0("NA;inputfiles/",landfill.file.names)} else
                                        if (run.control == "MB_cullVax"){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)} else
-                                         if (run.control == "IPcull") {paste0("inputfiles/", landfill.file.names)} else
-                                           if (run.control == "flex"){
-                                             if("shipBan,cull" == ctrl.type){paste0("NA;inputfiles/", landfill.file.names)} else
-                                               if("shipBan,vax" == ctrl.type){paste0("NA;inputfiles/",vaccine.file)} else 
-                                                 if("shipBan,cull,vax" == ctrl.type){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)}},
+                                         if (run.control == "flex_cullVax"){paste0("inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)} else
+                                           if (run.control == "IPcull" |  run.control == "flex_cull") {paste0("inputfiles/", landfill.file.names)} else
+                                             if (run.control == "flex_MBcullVax"){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)} else
+                                               if (run.control == "flex_MBvax"){paste0("NA;inputfiles/",vaccine.file)} else
+                                                 if (run.control == "flex"){
+                                                   if("shipBan,cull" == ctrl.type){paste0("NA;inputfiles/", landfill.file.names)} else
+                                                     if("shipBan,vax" == ctrl.type){paste0("NA;inputfiles/",vaccine.file)} else 
+                                                       if("shipBan,cull,vax" == ctrl.type){paste0("NA;inputfiles/",landfill.file.names,";inputfiles/",vaccine.file)}},
                                ctrl.constraint.filetypes = if(run.control == "other") {ctrl.constraint.filetypes} else 
                                  if (run.control == "noControl") {"NA"} else
                                    if (run.control == "MB") {"NA"} else
-                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull" ){"NA;resourceLocs"} else
+                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull" | run.control == "flex_MBcull"){"NA;resourceLocs"} else
                                        if (run.control == "MB_cullVax"){"NA;resourceLocs;resourceBoosts"} else
-                                         if (run.control == "IPcull") {"resourceLocs"} else
-                                           if (run.control == "flex"){
-                                             if("shipBan,cull" == ctrl.type){"NA;resourceLocs"} else
-                                               if("shipBan,vax" == ctrl.type){"NA;resourceBoosts"} else 
-                                                 if("shipBan,cull,vax" == ctrl.type){"NA;resourceLocs;resourceBoosts"}},
+                                         if (run.control == "flex_cullVax"){"resourceLocs;resourceBoosts"} else
+                                           if (run.control == "IPcull" | run.control == "flex_cull") {"resourceLocs"} else
+                                             if (run.control == "flex_MBcullVax"){"NA;resourceLocs;resourceBoosts"} else
+                                               if (run.control == "flex_MBvax"){"NA;resourceBoosts"} else
+                                                 if (run.control == "flex"){
+                                                   if("shipBan,cull" == ctrl.type){"NA;resourceLocs"} else
+                                                     if("shipBan,vax" == ctrl.type){"NA;resourceBoosts"} else 
+                                                       if("shipBan,cull,vax" == ctrl.type){"NA;resourceLocs;resourceBoosts"}},
                                effective.mean = if(run.control == "other") {effective.mean} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {effective.mb} else
                                      if (run.control == "MB_IPcull" ) {paste0(effective.mb,",",effective.cull)} else
-                                       if (run.control == "MB_IPDCcull") {paste0(effective.mb,",",effective.cull)} else
+                                       if (run.control == "MB_IPDCcull" | run.control == "flex_MBcull") {paste0(effective.mb,",",effective.cull)} else
                                          if (run.control == "MB_cullVax") {paste0(effective.mb,",",effective.cull,",",effective.vax)} else
-                                           if (run.control == "IPcull") {effective.cull} else
-                                             if (run.control == "flex"){
-                                               if("shipBan,cull" == ctrl.type){paste0(effective.mb,",",effective.cull)} else
-                                                 if("shipBan,vax" == ctrl.type){paste0(effective.mb,",",effective.vax)} else 
-                                                   if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb,",",effective.cull,",",effective.vax)}},
+                                           if (run.control == "flex_cullVax") {paste0(effective.cull,",",effective.vax)} else
+                                             if (run.control == "IPcull" |  run.control == "flex_cull") {effective.cull} else
+                                               if (run.control == "flex_MBcullVax") {paste0(effective.mb,",",effective.cull,",",effective.vax)} else
+                                                 if (run.control == "flex_MBvax") {paste0(effective.mb,",",effective.vax)} else
+                                                   if (run.control == "flex"){
+                                                     if("shipBan,cull" == ctrl.type){paste0(effective.mb,",",effective.cull)} else
+                                                       if("shipBan,vax" == ctrl.type){paste0(effective.mb,",",effective.vax)} else 
+                                                         if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb,",",effective.cull,",",effective.vax)}},
                                effective.sd = if(run.control == "other") {effective.mean.sd} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {effective.mb.sd} else
                                      if (run.control == "MB_IPcull" ) {paste0(effective.mb.sd,",",effective.cull.sd)} else
-                                       if (run.control == "MB_IPDCcull") {paste0(effective.mb.sd,",",effective.cull.sd)} else
+                                       if (run.control == "MB_IPDCcull" | run.control == "flex_MBcull") {paste0(effective.mb.sd,",",effective.cull.sd)} else
                                          if (run.control == "MB_cullVax") {paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)} else
-                                           if (run.control == "IPcull") {effective.cull.sd} else 
-                                             if (run.control == "flex"){
-                                               if("shipBan,cull" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd)} else
-                                                 if("shipBan,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.vax.sd)} else 
-                                                   if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)}},
+                                           if (run.control == "flex_cullVax") {paste0(effective.cull.sd,",",effective.vax.sd)} else
+                                             if (run.control == "IPcull" |  run.control == "flex_cull") {effective.cull.sd} else
+                                               if (run.control == "flex_MBcullVax") {paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)} else
+                                                 if (run.control == "flex_MBvax") {paste0(effective.mb.sd,",",effective.vax.sd)} else
+                                                   if (run.control == "flex"){
+                                                     if("shipBan,cull" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd)} else
+                                                       if("shipBan,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.vax.sd)} else 
+                                                         if("shipBan,cull,vax" == ctrl.type){paste0(effective.mb.sd,",",effective.cull.sd,",",effective.vax.sd)}},
                                inactive.mean = if(run.control == "other") {inactive.mean} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {inactive.mb} else
                                      if (run.control == "MB_IPcull" ) {paste0(inactive.mb,",",inactive.cull)} else
-                                       if (run.control == "MB_IPDCcull") {paste0(inactive.mb,",",inactive.cull)} else
+                                       if (run.control == "MB_IPDCcull" | run.control == "flex_MBcull") {paste0(inactive.mb,",",inactive.cull)} else
                                          if (run.control == "MB_cullVax") {paste0(inactive.mb,",",inactive.cull,",",inactive.vax)} else
-                                           if (run.control == "IPcull") {inactive.cull} else 
-                                             if (run.control == "flex"){
-                                               if("shipBan,cull" == ctrl.type){paste0(inactive.mb,",",inactive.cull)} else
-                                                 if("shipBan,vax" == ctrl.type){paste0(inactive.mb,",",inactive.vax)} else 
-                                                   if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb,",",inactive.cull,",",inactive.vax)}},
+                                           if (run.control == "flex_cullVax") {paste0(inactive.cull,",",inactive.vax)} else
+                                             if (run.control == "flex_MBcullVax") {paste0(inactive.mb,",",inactive.cull,",",inactive.vax)} else
+                                               if (run.control == "flex_MBvax") {paste0(inactive.mb,",",inactive.vax)} else
+                                                 if (run.control == "IPcull" |  run.control == "flex_cull") {inactive.cull} else
+                                                   if (run.control == "flex"){
+                                                     if("shipBan,cull" == ctrl.type){paste0(inactive.mb,",",inactive.cull)} else
+                                                       if("shipBan,vax" == ctrl.type){paste0(inactive.mb,",",inactive.vax)} else 
+                                                         if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb,",",inactive.cull,",",inactive.vax)}},
                                inactive.sd = if(run.control == "other") {inactive.mean.sd} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {inactive.mb.sd} else
                                      if (run.control == "MB_IPcull" ) {paste0(inactive.mb.sd,",",inactive.cull.sd)} else
-                                       if (run.control == "MB_IPDCcull") {paste0(inactive.mb.sd,",",inactive.cull.sd)} else
+                                       if (run.control == "MB_IPDCcull" | run.control == "flex_MBcull") {paste0(inactive.mb.sd,",",inactive.cull.sd)} else
                                          if (run.control == "MB_cullVax") {paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)} else
-                                           if (run.control == "IPcull") {inactive.cull.sd} else 
-                                             if (run.control == "flex"){
-                                               if("shipBan,cull" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd)} else
-                                                 if("shipBan,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.vax.sd)} else 
-                                                   if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)}},
+                                           if (run.control == "flex_cullVax") {paste0(inactive.cull.sd,",",inactive.vax.sd)} else    
+                                             if (run.control == "flex_MBcullVax") {paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)} else
+                                               if (run.control == "flex_MBvax") {paste0(inactive.mb.sd,",",inactive.vax.sd)} else
+                                                 if (run.control == "IPcull" |  run.control == "flex_cull") {inactive.cull.sd} else 
+                                                   if (run.control == "flex"){
+                                                     if("shipBan,cull" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd)} else
+                                                       if("shipBan,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.vax.sd)} else 
+                                                         if("shipBan,cull,vax" == ctrl.type){paste0(inactive.mb.sd,",",inactive.cull.sd,",",inactive.vax.sd)}},
                                ctrl.response.target = if(run.control == "other") {ctrl.response.target} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {0} else
-                                     if (run.control == "MB_IPcull" ) {"0,0"} else
+                                     if (run.control == "MB_IPcull" | run.control == "flex_MBcull") {"0,0"} else
                                        if (run.control == "MB_IPDCcull") {"0,0,-1"} else
-                                         if (run.control == "MB_cullVax") {paste0("0,0,",vax.range)} else
-                                           if (run.control == "IPcull") {"0"} else 
-                                             if (run.control == "flex"){ctrl.response.target},
+                                         if (run.control == "MB_cullVax") {paste0("0,",cull.range,",",vax.range)} else
+                                           if (run.control == "flex_cullVax") {paste0(cull.range,",",vax.range)} else
+                                             if (run.control == "flex_MBcullVax") {paste0("0,", cull.range,",",vax.range)} else
+                                               if (run.control == "flex_MBvax") {paste0("0,",vax.range)} else
+                                                 if (run.control == "IPcull" |  run.control == "flex_cull") {"0"} else 
+                                                   if (run.control == "flex"){ctrl.response.target},
+                               flex.file = flex.file,
                                ctrl.triggers = ctrl.triggers,
                                ctrl.eff = if(run.control == "other") { ctrl.eff} else 
                                  if (run.control == "noControl") {0} else
                                    if (run.control == "MB") {paste0(mb.eff, ",", mb.eff)} else
-                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull"){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
-                                       if (run.control == "MB_cullVax" ){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)} else
-                                         if (run.control == "IPcull") {paste0(cull.eff, ",", cull.eff)} else
-                                           if (run.control == "flex"){
-                                             if("shipBan,cull" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
-                                               if("shipBan,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";", vax.eff, ",", vax.eff)} else 
-                                                 if("shipBan,cull,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)}},
+                                     if (run.control == "MB_IPcull" |run.control == "MB_IPDCcull" | run.control == "flex_MBcull"){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
+                                       if (run.control == "MB_cullVax"){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)} else
+                                         if (run.control == "flex_cullVax"){paste0(cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)} else
+                                           if (run.control == "flex_MBcullVax" ){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)} else
+                                             if (run.control == "flex_MBvax" ){paste0(mb.eff, ",", mb.eff,";", vax.eff, ",", vax.eff)} else
+                                               if (run.control == "IPcull" | run.control == "flex_cull") {paste0(cull.eff, ",", cull.eff)} else 
+                                                 if (run.control == "flex"){
+                                                   if("shipBan,cull" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff)} else
+                                                     if("shipBan,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";", vax.eff, ",", vax.eff)} else 
+                                                       if("shipBan,cull,vax" == ctrl.type){paste0(mb.eff, ",", mb.eff,";",cull.eff, ",", cull.eff,";", vax.eff, ",", vax.eff)}},
                                ctrl.trigger.threshold = ctrl.trigger.threshold,
                                ctrl.trigger.response = ctrl.trigger.response,
                                ctrl.response.priority = if (run.control == "other" | run.control == "flex") {ctrl.response.priority} else
-                                 if (run.control == "noControl" | run.control == "MB" | run.control == "IPcull") {"earliest"} else
-                                   if (run.control == "MB_IPcull") {paste0("earliest",",","earliest")} else
-                                     if (run.control == "MB_IPDCcull" | run.control == "MB_cullVax") {paste0( "earliest",",","earliest",",","earliest")},
+                                 if (run.control == "noControl" | run.control == "MB" | run.control == "IPcull" |  run.control == "flex_cull") {"earliest"} else
+                                   if (run.control == "MB_IPcull" | run.control == "flex_MBcull" | run.control == "flex_cullVax" | run.control == "flex_MBvax") {paste0("earliest",",","earliest")} else
+                                     if (run.control == "MB_IPDCcull" | run.control == "MB_cullVax" | run.control == "flex_MBcullVax") {paste0( "earliest",",","earliest",",","earliest")},
                                flex.file.name = flex.file.name,
                                index.rep.time = paste0(index.rep.time,",",index.rep.time.sd ),
                                rep.time = paste0(rep.time,",",rep.time.sd),
                                DC.rep.time = paste0(DC.rep.time, ",",DC.rep.time.sd),
                                DC_scaling = paste0("sus,", DC.sus, ";exp,", DC.exp),
                                stringsAsFactors = FALSE)
-  
+
   replacement.df$full.batch.name = gsub("config_", "", replacement.df$config.fname)
   replacement.df$full.batch.name = gsub(".txt", "", replacement.df$full.batch.name)
-  
   columns <- length(replacement.df)
+
   for(i in 3:columns){
     if (colnames(replacement.df)[i] == "full.batch.name"){colnames(replacement.df)[i] = 1} else 
       if (colnames(replacement.df)[i] == "summary"){colnames(replacement.df)[i] = 2} else 
         if (colnames(replacement.df)[i] == "detail"){colnames(replacement.df)[i] = 3} else 
           if (colnames(replacement.df)[i] == "print.grid"){colnames(replacement.df)[i] = 4} else 
-            if (colnames(replacement.df)[i] == "FLAPS.locations"){colnames(replacement.df)[i] = 11} else 
-              if (colnames(replacement.df)[i] == "species"){colnames(replacement.df)[i] = 12} else 
-                if (colnames(replacement.df)[i] == "timesteps"){colnames(replacement.df)[i] = 13} else 
-                  if (colnames(replacement.df)[i] == "cutoff"){colnames(replacement.df)[i] = 14} else 
-                    if (colnames(replacement.df)[i] == "verbose"){colnames(replacement.df)[i] = 15} else 
-                      if (colnames(replacement.df)[i] == "xy"){colnames(replacement.df)[i] = 17} else
-                        if (colnames(replacement.df)[i] == "fips.info"){colnames(replacement.df)[i] = 18} else
-                          if (colnames(replacement.df)[i] == "start.day"){colnames(replacement.df)[i] = 19} else
-                            if (colnames(replacement.df)[i] == "disease"){colnames(replacement.df)[i] = 20} else
-                              if (colnames(replacement.df)[i] == "source"){colnames(replacement.df)[i] = 21} else 
-                                if (colnames(replacement.df)[i] == "filetype"){colnames(replacement.df)[i] = 22} else 
-                                  if (colnames(replacement.df)[i] == "market.within"){colnames(replacement.df)[i] = 23} else
-                                    if (colnames(replacement.df)[i] == "susceptibility.exponents"){colnames(replacement.df)[i] = 24} else
-                                      if (colnames(replacement.df)[i] == "infectiousness.exponents"){colnames(replacement.df)[i] = 25} else
-                                        if (colnames(replacement.df)[i] == "susceptibility.constants"){colnames(replacement.df)[i] = 26} else
-                                          if (colnames(replacement.df)[i] == "infectiousness.constants"){colnames(replacement.df)[i] = 27} else
-                                            if (colnames(replacement.df)[i] == "kernel.type"){colnames(replacement.df)[i] = 28} else
-                                              if (colnames(replacement.df)[i] == "kernels"){colnames(replacement.df)[i] = 29} else
-                                                if (colnames(replacement.df)[i] == "data.kernel.file"){colnames(replacement.df)[i] = 30} else
-                                                  if (colnames(replacement.df)[i] == "latency.dist"){colnames(replacement.df)[i] = 31} else
-                                                    if (colnames(replacement.df)[i] == "infectious.dist"){colnames(replacement.df)[i] = 32} else
-                                                      if (colnames(replacement.df)[i] == "partial"){colnames(replacement.df)[i] = 33} else
-                                                        if (colnames(replacement.df)[i] == "partial.param"){colnames(replacement.df)[i] = 34} else
-                                                          if (colnames(replacement.df)[i] == "grid.file"){colnames(replacement.df)[i] = 36} else
-                                                            if (colnames(replacement.df)[i] == "grid.side"){colnames(replacement.df)[i] = 37} else
-                                                              if (colnames(replacement.df)[i] == "grid.params"){colnames(replacement.df)[i] = 38} else
-                                                                if (colnames(replacement.df)[i] == "shipment.gen"){colnames(replacement.df)[i] = 41} else
-                                                                  if (colnames(replacement.df)[i] == "shipment.scale"){colnames(replacement.df)[i] = 42} else
-                                                                    if (colnames(replacement.df)[i] == "usamm.posteriors"){colnames(replacement.df)[i] = 44} else
-                                                                      if (colnames(replacement.df)[i] == "usamm.order"){colnames(replacement.df)[i] = 45} else
-                                                                        if (colnames(replacement.df)[i] == "usamm.day"){colnames(replacement.df)[i] = 46} else
-                                                                          if (colnames(replacement.df)[i] == "usamm.origin.cov"){colnames(replacement.df)[i] = 47} else
-                                                                            if (colnames(replacement.df)[i] == "usamm.dest.cov"){colnames(replacement.df)[i] = 48} else
-                                                                              if (colnames(replacement.df)[i] == "exp.ship"){colnames(replacement.df)[i] = 50} else
-                                                                                if (colnames(replacement.df)[i] == "ctrl.type"){colnames(replacement.df)[i] = 51} else
-                                                                                  if (colnames(replacement.df)[i] == "ctrl.constraint.type"){colnames(replacement.df)[i] = 52} else
-                                                                                    if (colnames(replacement.df)[i] == "ctrl.constraint"){colnames(replacement.df)[i] = 53} else
-                                                                                      if (colnames(replacement.df)[i] == "ctrl.scale"){colnames(replacement.df)[i] = 54} else
-                                                                                        if (colnames(replacement.df)[i] == "ctrl.constraint.files"){colnames(replacement.df)[i] = 55} else 
-                                                                                          if (colnames(replacement.df)[i] == "ctrl.constraint.filetypes"){colnames(replacement.df)[i] = 56} else
-                                                                                            if (colnames(replacement.df)[i] == "effective.mean"){colnames(replacement.df)[i] = 57} else
-                                                                                              if (colnames(replacement.df)[i] == "effective.sd"){colnames(replacement.df)[i] = 58} else
-                                                                                                if (colnames(replacement.df)[i] == "inactive.mean"){colnames(replacement.df)[i] = 59} else
-                                                                                                  if (colnames(replacement.df)[i] == "inactive.sd"){colnames(replacement.df)[i] = 60} else
-                                                                                                    if (colnames(replacement.df)[i] == "ctrl.eff"){colnames(replacement.df)[i] = 61} else
-                                                                                                      if (colnames(replacement.df)[i] == "flex.file"){colnames(replacement.df)[i] = 62} else
-                                                                                                        if (colnames(replacement.df)[i] == "ctrl.triggers"){colnames(replacement.df)[i] = 63} else
-                                                                                                          if (colnames(replacement.df)[i] == "ctrl.trigger.threshold"){colnames(replacement.df)[i] = 64} else
-                                                                                                            if (colnames(replacement.df)[i] == "ctrl.trigger.response"){colnames(replacement.df)[i] = 65} else
-                                                                                                              if (colnames(replacement.df)[i] == "ctrl.response.target"){colnames(replacement.df)[i] = 66} else
-                                                                                                                if (colnames(replacement.df)[i] == "ctrl.response.priority"){colnames(replacement.df)[i] = 67} else
-                                                                                                                  if (colnames(replacement.df)[i] == "flex.file.name"){colnames(replacement.df)[i] = 68} else
+            if (colnames(replacement.df)[i] == "print.control"){colnames(replacement.df)[i] = 6} else
+              if (colnames(replacement.df)[i] == "FLAPS.locations"){colnames(replacement.df)[i] = 11} else 
+                if (colnames(replacement.df)[i] == "species"){colnames(replacement.df)[i] = 12} else 
+                  if (colnames(replacement.df)[i] == "timesteps"){colnames(replacement.df)[i] = 13} else 
+                    if (colnames(replacement.df)[i] == "cutoff"){colnames(replacement.df)[i] = 14} else 
+                      if (colnames(replacement.df)[i] == "verbose"){colnames(replacement.df)[i] = 15} else 
+                        if (colnames(replacement.df)[i] == "xy"){colnames(replacement.df)[i] = 17} else
+                          if (colnames(replacement.df)[i] == "fips.info"){colnames(replacement.df)[i] = 18} else
+                            if (colnames(replacement.df)[i] == "start.day"){colnames(replacement.df)[i] = 19} else
+                              if (colnames(replacement.df)[i] == "disease"){colnames(replacement.df)[i] = 20} else
+                                if (colnames(replacement.df)[i] == "source"){colnames(replacement.df)[i] = 21} else 
+                                  if (colnames(replacement.df)[i] == "filetype"){colnames(replacement.df)[i] = 22} else 
+                                    if (colnames(replacement.df)[i] == "market.within"){colnames(replacement.df)[i] = 23} else
+                                      if (colnames(replacement.df)[i] == "susceptibility.exponents"){colnames(replacement.df)[i] = 24} else
+                                        if (colnames(replacement.df)[i] == "infectiousness.exponents"){colnames(replacement.df)[i] = 25} else
+                                          if (colnames(replacement.df)[i] == "susceptibility.constants"){colnames(replacement.df)[i] = 26} else
+                                            if (colnames(replacement.df)[i] == "infectiousness.constants"){colnames(replacement.df)[i] = 27} else
+                                              if (colnames(replacement.df)[i] == "kernel.type"){colnames(replacement.df)[i] = 28} else
+                                                if (colnames(replacement.df)[i] == "kernels"){colnames(replacement.df)[i] = 29} else
+                                                  if (colnames(replacement.df)[i] == "data.kernel.file"){colnames(replacement.df)[i] = 30} else
+                                                    if (colnames(replacement.df)[i] == "latency.dist"){colnames(replacement.df)[i] = 31} else
+                                                      if (colnames(replacement.df)[i] == "infectious.dist"){colnames(replacement.df)[i] = 32} else
+                                                        if (colnames(replacement.df)[i] == "partial"){colnames(replacement.df)[i] = 33} else
+                                                          if (colnames(replacement.df)[i] == "partial.param"){colnames(replacement.df)[i] = 34} else
+                                                            if (colnames(replacement.df)[i] == "grid.file"){colnames(replacement.df)[i] = 36} else
+                                                              if (colnames(replacement.df)[i] == "grid.side"){colnames(replacement.df)[i] = 37} else
+                                                                if (colnames(replacement.df)[i] == "grid.params"){colnames(replacement.df)[i] = 38} else
+                                                                  if (colnames(replacement.df)[i] == "shipment.gen"){colnames(replacement.df)[i] = 41} else
+                                                                    if (colnames(replacement.df)[i] == "shipment.scale"){colnames(replacement.df)[i] = 42} else
+                                                                      if (colnames(replacement.df)[i] == "usamm.posteriors"){colnames(replacement.df)[i] = 44} else
+                                                                        if (colnames(replacement.df)[i] == "usamm.order"){colnames(replacement.df)[i] = 45} else
+                                                                          if (colnames(replacement.df)[i] == "usamm.day"){colnames(replacement.df)[i] = 46} else
+                                                                            if (colnames(replacement.df)[i] == "usamm.origin.cov"){colnames(replacement.df)[i] = 47} else
+                                                                              if (colnames(replacement.df)[i] == "usamm.dest.cov"){colnames(replacement.df)[i] = 48} else
+                                                                                if (colnames(replacement.df)[i] == "exp.ship"){colnames(replacement.df)[i] = 50} else
+                                                                                  if (colnames(replacement.df)[i] == "ctrl.type"){colnames(replacement.df)[i] = 51} else
+                                                                                    if (colnames(replacement.df)[i] == "ctrl.constraint.type"){colnames(replacement.df)[i] = 52} else
+                                                                                      if (colnames(replacement.df)[i] == "ctrl.constraint"){colnames(replacement.df)[i] = 53} else
+                                                                                        if (colnames(replacement.df)[i] == "ctrl.scale"){colnames(replacement.df)[i] = 54} else
+                                                                                          if (colnames(replacement.df)[i] == "ctrl.constraint.files"){colnames(replacement.df)[i] = 55} else 
+                                                                                            if (colnames(replacement.df)[i] == "ctrl.constraint.filetypes"){colnames(replacement.df)[i] = 56} else
+                                                                                              if (colnames(replacement.df)[i] == "effective.mean"){colnames(replacement.df)[i] = 57} else
+                                                                                                if (colnames(replacement.df)[i] == "effective.sd"){colnames(replacement.df)[i] = 58} else
+                                                                                                  if (colnames(replacement.df)[i] == "inactive.mean"){colnames(replacement.df)[i] = 59} else
+                                                                                                    if (colnames(replacement.df)[i] == "inactive.sd"){colnames(replacement.df)[i] = 60} else
+                                                                                                      if (colnames(replacement.df)[i] == "ctrl.eff"){colnames(replacement.df)[i] = 61} else
+                                                                                                        if (colnames(replacement.df)[i] == "flex.file"){colnames(replacement.df)[i] = 62} else
+                                                                                                          if (colnames(replacement.df)[i] == "ctrl.triggers"){colnames(replacement.df)[i] = 63} else
+                                                                                                            if (colnames(replacement.df)[i] == "ctrl.trigger.threshold"){colnames(replacement.df)[i] = 64} else
+                                                                                                              if (colnames(replacement.df)[i] == "ctrl.trigger.response"){colnames(replacement.df)[i] = 65} else
+                                                                                                                if (colnames(replacement.df)[i] == "ctrl.response.target"){colnames(replacement.df)[i] = 66} else
+                                                                                                                  if (colnames(replacement.df)[i] == "ctrl.response.priority"){colnames(replacement.df)[i] = 67} else
+                                                                                                                    if (colnames(replacement.df)[i] == "flex.file.name"){colnames(replacement.df)[i] = 68} else
                                                                                                                     if (colnames(replacement.df)[i] == "index.rep.time"){colnames(replacement.df)[i] = 71} else
                                                                                                                       if (colnames(replacement.df)[i] == "rep.time"){colnames(replacement.df)[i] = 72} else
                                                                                                                         if (colnames(replacement.df)[i] == "DC.rep.time"){colnames(replacement.df)[i] = 73} else
