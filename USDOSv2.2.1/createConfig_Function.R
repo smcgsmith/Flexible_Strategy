@@ -59,7 +59,7 @@
 #' @param grid.side (37) Length of cell side for uniform cells (will override grid density options grid.max.farms and grid.min.side)
 #' @param grid.max.farms (38) Max farms per grid cell (default 500)
 #' @param grid.min.side (38) Grid cell size minimum side length in meters (default 100,000)
-#' @param shipment.gen (41) Method to generate county-to-county shipments with USAMM, comma-separated (0: shipments off; 1: USAMMv1; 3: USAMMv2 kernel 1; 4: USAMMv2 kernel 2; 5: USAMMv2 kernel 3 (default))
+#' @param shipment.gen (41) Method to generate county-to-county shipments with USAMM, comma-separated (0: shipments off; 1: USAMMv1; 2: USAMMv3; 3: USAMMv2 kernel 1; 4: USAMMv2 kernel 2; 5: USAMMv2 kernel 3 (default))
 #' @param shipment.scale (42) Shipment scaling factor (default 1)
 #' @param usamm.posteriors (44) USAMM posterior files. Must match method selected in shipment.gen. Comma-separated, one file for each species. Default is inputfiles/beef_k3_cov.post, inputfiles/dairy_k3_cov.post.
 #' @param usamm.order (45) The order in which the temporal switching of USAMM parameters should happen. Comma separated, time periods exactly as the temporal component of the USAMM parameter names in the usamm.posterior file(s). Default is Q1,Q2,Q3,Q4.
@@ -183,7 +183,7 @@ createConfigs <- function(run.control = "noControl",  flex.file.name = NULL, dis
   grid.min.side <- 100000
   
   # Shipment
-  shipment.gen <- 5
+  shipment.gen <- 2
   shipment.scale <- 1
   usamm.order <- "Q1,Q2,Q3,Q4"
   usamm.day <- "1,91,182,274"
