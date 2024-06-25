@@ -165,7 +165,7 @@ createConfigs <- function(run.control = "noControl", disease = 0, flex.file.name
   reps <- 10
   cutoff <- "*"  
   
-  fips.info <- "inputfiles/FIPS_updated_new.txt"  
+  fips.info <- "inputfiles/USAMMv3_cattle_county_data.txt"  
   xy <- 0
   start.day <- 0
   
