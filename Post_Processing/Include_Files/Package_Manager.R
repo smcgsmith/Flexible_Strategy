@@ -1,11 +1,11 @@
 # List of required packages
 required_packages <- c(
   "stats", "maps", "mapdata", "tidyr", "fields", "foreach", 
-  "dplyr", "RColorBrewer", "rgdal", "reshape2", "reshape", 
+  "dplyr", "RColorBrewer", "reshape2", "reshape", 
   "data.table", "knitr", "ggplot2", "ggmap", "kableExtra", 
   "magrittr", "tidyverse", "data.table", "ggfortify", "officer",
   "rvg", "ggfortify", "cowplot", "unikn", "data.table",
-  "epiR", "ggplot2", "tidyverse", "RColorBrewer", "broom",
+  "ggplot2", "tidyverse", "RColorBrewer", "broom",
   "foreach", "doParallel", "gplots", "stargazer", "sjPlot",
   "GGally", "tidyr", "ggpubr", "broom", "doSNOW"
 )
