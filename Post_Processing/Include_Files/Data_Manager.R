@@ -299,8 +299,19 @@
     
     summary_file <- fread(summary_file_path, header = TRUE, select = c("Rep", "Seed_Farms", "Seed_FIPS", "Duration", "cullEffective", "vaxEffective", "Num_Inf"))
     
-    detail_file <- fread(detail_file_path, header = TRUE, 
-                         select = c("Rep", "ExposedID", "ExposedCounty", "SourceID", "SourceCounty", "ControlPrevented"))
+    # tic <- Sys.time()
+    # detail_file <- fread(detail_file_path, header = TRUE,
+    #                      select = c("Rep", "ExposedID", "ExposedCounty", "SourceID", "SourceCounty", "ControlPrevented"))
+    # toc <- Sys.time()
+    # 
+    # toc-tic
+    #
+    tic <- Sys.time()
+    detail_file <- fread(cmd = paste('grep', 'none', detail_file_path))[,c(1,2,4,6,7,8)]
+    colnames(detail_file) <- c("Rep", "ExposedID", "SourceID", "ControlPrevented", "ExposedCounty", "SourceCounty")
+    toc <- Sys.time()
+
+    toc-tic
     
     # Retrieve the correct flaps file from the flaps_file_list
     flaps_num <- substr(unlist(strsplit(summary_file_names[file_idx], "format_"))[2], 1, 4)
@@ -308,26 +319,39 @@
     
     # Merge summary and flaps files
     summary_file <- merge(summary_file, flaps_file[, c("Id", "anim")], by.x = "Seed_Farms", by.y = "Id", all.x = TRUE)
+    rep_inf_totals <- merge(detail_file, flaps_file[, c("Id", "anim")], by.x = "ExposedID", by.y = "Id", all.x = TRUE) %>%
+      dplyr::rename(Num_Anim_Inf = anim)
     
     # Filter through detail files
-    detail_file <- detail_file[detail_file$ControlPrevented == "none", ]
-    detail_file <- unique(as.data.table(detail_file), by = c("Rep", "ExposedID")) 
-    detail_file <- detail_file %>%
-      mutate(Rep = as.integer(Rep),
-             ExposedID = as.integer(ExposedID),
-             ExposedCounty = as.integer(ExposedCounty),
-             SourceID = as.integer(SourceID),
-             SourceCounty = as.integer(SourceCounty))
+    #detail_file <- detail_file[detail_file$ControlPrevented == "none", ]
+    # detail_file <- unique(as.data.table(detail_file), by = c("Rep", "ExposedID")) 
+    # detail_file <- detail_file %>%
+    #   mutate(Rep = as.integer(Rep),
+    #          ExposedID = as.integer(ExposedID),
+    #          ExposedCounty = as.integer(ExposedCounty),
+    #          SourceID = as.integer(SourceID),
+    #          SourceCounty = as.integer(SourceCounty))
     
     # Merge control file with flaps file to get number of animals on the controlled farm
-    rep_totals <- merge(flaps_file[, c("Id", "County_fips", "anim")], control_file[, c("Rep", "farmID", "FIPS", "controlStatus")],
-                        by.x = c("Id", "County_fips"), by.y = c("farmID", "FIPS"), all = TRUE)
+    rep_control_totals <- merge(flaps_file[, c("Id", "County_fips", "anim")], 
+                        control_file[, c("Rep", "farmID", "FIPS", "controlStatus")],
+                        by.x = c("Id", "County_fips"), by.y = c("farmID", "FIPS"), all.y = TRUE) %>%
+      dplyr::rename(ExposedID = Id, Num_Anim_Controlled = anim)
     
-    rep_totals <- rep_totals %>%
+    filtered_rep_inf_totals <- rep_inf_totals %>%
+      anti_join(rep_control_totals, by = c("Rep", "ExposedID"))
+    
+    rep_totals <- rep_control_totals %>%
       group_by(Rep, controlStatus, .drop = FALSE) %>%
-      summarise(anim = sum(anim)) %>%
+      summarise(anim = sum(Num_Anim_Controlled)) %>%
       ungroup()
     
+    rep_inf_totals <- filtered_rep_inf_totals %>%
+      group_by(Rep, .drop = FALSE) %>%
+      summarise(anim = sum(Num_Anim_Inf)) %>%
+      ungroup()
+    
+    summary_file$Num_Inf_No_Control <- rep(0,dim(summary_file)[1])
     # If a Rep's cullEff or vaxEff >1, get the additional info ab that rep from the control summary file
     # Much faster to use a looop in this case for some reason.
     for(row in 1:max(summary_file$Rep)){
@@ -348,18 +372,27 @@
         summary_file$cullEffective[row]=rep_totals$anim[which(rep_totals$Rep==summary_file$Rep[row]  & rep_totals$controlStatus == "effective.cull")]
         # print("BOTH")
       }
+      if (summary_file$Rep[row] %in% rep_inf_totals$Rep){
+        summary_file$Num_Inf_No_Control[row]=rep_inf_totals$anim[which(rep_inf_totals$Rep==summary_file$Rep[row])] 
+      }
     }
     
-    run_anim = summary_file %>%
+    run_anim <- summary_file %>%
       group_by(Rep, Seed_FIPS, Seed_Farms) %>%
-      arrange(Seed_FIPS)
+      arrange(Seed_FIPS) %>%
+      dplyr::rename("Num_Anim_Inf" = anim)
     
     rm(rep_totals, control_file, summary_file)
     gc()
     
-    run_anim$type <- control_file_names[file_idx]
+    # run_anim$type <- control_file_names[file_idx]
+    # run_anim <- .extract_runDetailsFromType(run_anim)
     
-    run_anim <- .extract_runDetailsFromType(run_anim)
+    new_columns <- .extract_runDetailsFromTypeString(control_file_names[file_idx])
+    run_anim$type <- new_columns$type
+    run_anim$control_type <- new_columns$control_type
+    run_anim$delay <- new_columns$delay
+    
     gc()
     
     if (file_idx == (length(control_file_names) / 2)) {
@@ -398,8 +431,14 @@
     no_control_df <- fread(paste0(pathfiles, file), header = TRUE, select = c("Rep", "Seed_Farms", "Seed_FIPS", "Duration","Num_Inf"))
     no_control_df$cullEffective <- 0
     no_control_df$vaxEffective <- 0
-    no_control_df$type <- file
-    no_control_df <- .extract_runDetailsFromType(no_control_df) #custom
+    # no_control_df$type <- file
+    # no_control_df <- .extract_runDetailsFromType(no_control_df) #custom
+    
+    new_columns <- .extract_runDetailsFromTypeString(file)
+    no_control_df$type <- new_columns$type
+    no_control_df$control_type <- new_columns$control_type
+    no_control_df$delay <- new_columns$delay
+    
     return(no_control_df)
   })
   
@@ -758,7 +797,7 @@ flaps_file_list <- lapply(1:10, function(flap) {
 #' @export
 .extract_runDetailsFromType <- function (df) {
   
-  if (any(str_detect(df$type[1], "newPremReportsOverX|percentIncrease|decrease|availability"))) {
+  if (any(str_detect(df, "newPremReportsOverX|percentIncrease|decrease|availability"))) {
     df <- df %>%
       mutate(type = str_replace(type, ".*_Infectious20days_", "") %>%
                str_remove("_MvmtBan_.*"),
@@ -768,7 +807,7 @@ flaps_file_list <- lapply(1:10, function(flap) {
              delay = if_else(is.na(delay), -1, delay),
              type = str_replace(type, "^[^_]+_[^_]+_", "")
     )
-  } else if (any(str_detect(df$type[1], "noControl"))) {
+  } else if (any(str_detect(df, "noControl"))) {
     df <- df %>%
       mutate(delay = "No control",
              type = str_replace(type, "FMD_.*PTon_Infectious20days_", "") %>%
@@ -782,6 +821,31 @@ flaps_file_list <- lapply(1:10, function(flap) {
                str_remove("_FLAPS.*"))
   }
   return(df)
+}
+
+.extract_runDetailsFromTypeString <- function (df) {
+  
+  if (any(str_detect(df, "newRegionReportsOverX|newPremReportsOverX|percentIncrease|decrease|availability"))) {
+    type <- df %>% str_replace(".*_Infectious20days_", "") %>%
+      str_remove("_MvmtBan_.*")
+    delay <- as.integer(sub('.*_(\\d+)$', '\\1', type))
+    control_type <- case_when(str_detect(df,"percentIncrease|availability|decrease") ~ "Adaptive",
+                              str_detect(df,"newPremReportsOverX") ~ "Fixed")
+    delay <- if_else(is.na(delay), -1, delay)
+    type <- str_replace(type, "^[^_]+_[^_]+_", "")
+  } else if (any(str_detect(df, "noControl"))) {
+    type <- df %>% str_replace(".*_Infectious20days_", "") %>%
+      str_remove("_noDiagnostics_.*")
+    delay <- as.integer(sub('.*_(\\d+)$', '\\1', type))
+    control_type <- "No control"
+    delay <- if_else(is.na(delay), -1, delay)
+    type <- str_replace(type, "^[^_]+_[^_]+_", "")
+  } else {
+    df <- df %>%
+      mutate(type = str_replace(type, ".*_Infectious20days_", "") %>%
+               str_remove("_FLAPS.*"))
+  }
+  return(list(type = type, delay = delay, control_type = control_type))
 }
 
 #' Reshape data from wide to long format

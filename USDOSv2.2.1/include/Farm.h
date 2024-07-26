@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef FARM_H
 #define FARM_H
 

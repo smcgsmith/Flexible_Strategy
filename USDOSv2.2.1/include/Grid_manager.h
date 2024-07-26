@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef Grid_manager_h
 #define Grid_manager_h
 

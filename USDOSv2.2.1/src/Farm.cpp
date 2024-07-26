@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include <stdio.h>
 #include <iostream>
 #include <sstream>

@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include "State.h"
 #include "Farm.h"
 #include "County.h"

@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef Status_manager_h
 #define Status_manager_h
 

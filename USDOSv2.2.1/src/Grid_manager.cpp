@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include <cmath> // std::sqrt
 #include <fstream>
 #include <iostream>

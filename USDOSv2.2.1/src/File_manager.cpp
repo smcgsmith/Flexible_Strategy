@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include "File_manager.h"
 #include <fstream>
 

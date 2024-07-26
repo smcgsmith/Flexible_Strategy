@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include "Status_manager.h"
 #include "shared_functions.h"
 

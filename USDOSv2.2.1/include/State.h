@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 /* A state, inherits from region */
 
 #ifndef STATE_H

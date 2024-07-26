@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef Shipment_manager_h
 #define Shipment_manager_h
 

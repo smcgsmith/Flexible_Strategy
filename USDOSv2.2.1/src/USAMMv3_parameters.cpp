@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include "USAMMv3_parameters.h"
 
 #include "shared_functions.h"

@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include <stdio.h>
 #include "shared_functions.h"
 #include "Farm.h"

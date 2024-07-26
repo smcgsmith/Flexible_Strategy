@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #include "Control_manager.h"
 #include "Control_resource.h" //Warning: added access to grid_manager just to try. Let's see if it works...
 #include "Grid_manager.h"

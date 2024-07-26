@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 /// \file
 
 #ifndef shared_functions_h

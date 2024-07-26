@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 /*
 A county. Inherits from Region.
 Call update_shipping_probabilities_USAMMv2(counties, k) to generate shipment probabilities,

@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef file_manager_h
 #define file_manager_h
 

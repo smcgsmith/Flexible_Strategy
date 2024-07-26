@@ -1,3 +1,4 @@
+//© 2024 Colorado State University
 #ifndef Control_manager_h
 #define Control_manager_h
 
