@@ -32,6 +32,15 @@
   source(paste0(dependencies,"Package_Manager.R"))
   source(paste0(dependencies,"Data_Manager.R"))
   source(paste0(dependencies,"map_by_fips_standalone.R"))
+  
+  Dur_min = 23
+  Dur_cutoff = 125
+  PremInf_min = 10 
+  PremInf_cutoff = 5000
+  ReportedPrems_min = 5
+  ReportedPrems_cutoff = 100
+  EpidExt_min= 1
+  EpidExt_cutoff=50
 }
 
 #===============================================================================
@@ -60,32 +69,18 @@ processUSDOS(export.datafiles = 3,
              completionProportion = F,
              plots = F,
              maps = F,
-             dataExist = F,
-             usdos_output_file_path = "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Post_Processing/Files_To_Process/")
+             dataExist = F)
+
+#===============================================================================
+#
+#Create Total.long to plot outbreak metric panel
+#
+#===============================================================================
 
 setwd(path0)
 Dur.long <- read.csv("Data/Duration_long.csv")
 EpidExt.long <- read.csv("Data/EpidemicExtent_long.csv")
 PremInf.long <- read.csv("Data/PremisesInfected_long.csv")
-
-Dur.long <- Dur.long %>% mutate(cType = str_extract(type, "^[^_]+"))
-Dur <- Dur.long %>%
-  mutate(trigger = str_extract(type, "^[^_]+"),
-         metric = "Duration (days)",
-         delay = case_when(str_detect(type, "static_newPremReportsOverX") ~ "0",
-                           str_detect(type, "flex_1Day") ~ "1",
-                           str_detect(type, "flex_2Days") ~ "2",
-                           str_detect(type, "flex_percentIncrease") ~ "3",
-                           str_detect(type, "noControl_noDiagnostics") ~ "No Control"),
-         cType = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                           str_detect(cType, "flex") ~ "State-dependent control",
-                           str_detect(cType, "static") ~ "Static control"),
-         type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                          str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
-                          str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
-                          str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
-                          str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
-
 
 Dur.long$metric <- "Duration (days)"
 EpidExt.long$metric <-  "Number of infected counties"
@@ -99,24 +94,38 @@ total.all <- do.call("rbind", list)
 
 # Create a new column "Delay" using case_when function from dplyr
 # Remove "1Day_" or "2Days_" prefix from the "type" column using separate function from tidyr
-total.all <- total.all %>% mutate(type = str_replace(type, ".*?_", "")) %>%
+total.all <- total.all %>%
+  filter(!(str_detect(type, "cull_cull_3000_10000_earliest_earliest") | 
+             str_detect(type, "cull_cull_0_10000_earliest_earliest") | 
+             str_detect(type, "largest") | 
+             str_detect(type, "smallest") | 
+             str_detect(type, "farthest") | 
+             str_detect(type, "closest") | 
+             str_detect(type, "decrease") | 
+             str_detect(type, "availability"))) %>%
   mutate(delay = case_when(
-    str_detect(type, "^1Day") ~ "1",
-    str_detect(type, "^2Days") ~ "2",
+    str_detect(type, "earliest_1_1") ~ "1",
+    str_detect(type, "earliest_2_2") ~ "2",
+    str_detect(type, "earliest_3_3") ~ "3",
+    str_detect(type, "noControl") ~ "No control",
     TRUE ~ "0"
   )) %>%
   mutate(cType = case_when(
     str_detect(type, "noControl_noDiagnostics") ~ "No control",
-    str_detect(cType, "flex") ~ "State-dependent control",
-    str_detect(cType, "static") ~ "Static control")) %>%
+    str_detect(type, "flex") ~ "Adaptive control",
+    str_detect(type, "static") ~ "Fixed control")) %>% 
+  mutate(type = str_replace(type, ".*?_", "")) %>%
   mutate(type = str_replace(type, "^(1|2)(Day|Days)_", "")) %>%
   mutate(trigger = str_extract(type, "^[^_]+")) %>%
   mutate(type = str_replace(type, "^[^_]+_[^_]+_[^_]+_[^_]+_", "")) %>%
-  filter(!(type == "cull_cull_3000_10000_earliest_earliest" | type == "cull_cull_0_10000_earliest_earliest"))
+  mutate(type = case_when(str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
+                          str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
+                          str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
+                          str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax",
+                          str_detect(cType, "No control") ~ "No control"))
 
 setwd(data_output)
 write.csv(total.all, file = "Total.long.csv")
-
 #===============================================================================
 #
 # Load some data
@@ -213,11 +222,7 @@ Outbreak_Metrics_All <- ggarrange(duration+labs(tag = "(a)")+theme(plot.tag = el
                                   epidext+labs(tag = "(c)")+theme(plot.tag = element_text(size = 14, face = "bold")),
                                   ncol = 1, common.legend = TRUE, legend = "bottom", align = "v")
 
-# ggsave(filename = "Outbreak_Metrics_All.jpeg", plot = Outbreak_Metrics_All, 
-#        path = plot_output, width = 9, height = 8, units = "in", dpi = 800)
-
 setwd(plot_output)
-#jpeg("Outbreak_Metrics_All.jpeg", width = 1810, height = 1800, units = 'px', res = 100)
 jpeg("Outbreak_Metrics_All.jpeg", width = 900, height = 800, units = 'px', res = 100)
 ggarrange(duration+labs(tag = "(a)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
           preminf+labs(tag = "(b)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
@@ -276,9 +281,9 @@ outbreak_cost <- Anim.long %>%
   filter(str_detect(type, 
                     "0_0_cull_vax_0_-1_earliest_earliest_0_0|0_10_cull_vax_0_-1_earliest_earliest_3_3")) %>%
   filter(Duration < 365) %>%
-  mutate(cost_all = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + (cullEffective*255.5) + (vaxEffective*6))/1e9,
-         cost_live = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*6))/1e9,
-         cost_kill = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*255.5))/1e9)
+  mutate(cost_all = ((Duration * 12000000) + (cullEffective*255.5) + (vaxEffective*6))/1e9,
+         cost_live = ((Duration * 12000000) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*6))/1e9,
+         cost_kill = ((Duration * 12000000) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*255.5))/1e9)
 
 cost_cutoff = round(quantile(outbreak_cost$cost_all, 0.975, na.rm = T), digits = 1)
 cost_cutoff_live = round(quantile(outbreak_cost$cost_live, 0.975, na.rm = T), digits = 1)

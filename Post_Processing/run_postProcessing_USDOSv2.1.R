@@ -11,6 +11,6 @@ processUSDOS(export.datafiles = 3,
              completionProportion = T,
              plots = T,
              maps = T,
-             dataExist = T)
+             dataExist = F)
 
 save(file = "postProcessing_USDOSv2.1.RData")
