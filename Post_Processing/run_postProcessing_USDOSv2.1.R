@@ -8,6 +8,7 @@ processUSDOS(export.datafiles = 3,
              epidemicExtent = T,
              localSpread = T,
              controlValue = T,
+             completionProportion = T,
              plots = T,
              maps = T,
              dataExist = T)

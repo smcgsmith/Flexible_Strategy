@@ -327,7 +327,7 @@ if (localSpread == TRUE){
 #  Number of animals controlled. Output file also used for cost calculations    
 #==============================================================================================
 
-if(controlValue == TRUE | animalsControlled == TRUE){
+if(controlValue == TRUE){
   print("Control value calculations are still under development. This operation will only produce a dataframe used to calculate value.")
   
   setwd(path0)
@@ -367,7 +367,7 @@ if(controlValue == TRUE | animalsControlled == TRUE){
   }
 }
 
-if(completetionProportion == TRUE){
+if(completionProportion == TRUE){
   print("Control value calculations are still under development. This operation will only produce a dataframe used to calculate value.")
   
   setwd(path0)

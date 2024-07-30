@@ -1,551 +1,72 @@
-  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-
-  source("postProcessing_USDOSv2.1.R")
-  
-  processUSDOS(export.datafiles = 3,
-               summaryTable = F,
-               duration = T,
-               premInf = T,
-               premReport = T,
-               epidemicExtent = T,
-               movementBan = F,
-               premisesCulled = F,
-               premisesVax = F,
-               diagnosticTests = F,
-               animalsInfected = F,
-               countyRisk = F,
-               localSpread = F,
-               plot_color = "color_blue",
-               map_color = "color_red",
-               ls_match = TRUE,
-               controlValue = F,
-               animalsControlled = F,
-               maps = TRUE,
-               dataExist = FALSE,
-               verbose = 1,
-               flexibleControl = TRUE)
-  
+#===============================================================================
+#
+# Load some "dependencies" and set up directory structure. Some 
+# of this is done automatically in the processUSDOS() function below,
+# but this ensures all packages and colors are loaded for plotting.
+#
+#===============================================================================
+{
+  # This will be the default directory
   path0 <- dirname(rstudioapi::getActiveDocumentContext()$path)
-  path_output <- file.path(path0, "Output_Files/")
-  dependencies <- file.path(path0,"Dependencies/")
+  # Location of output files
+  pathfiles <- file.path(path0, "Files_To_Process/")
+  
+  # Generate directories for maps (map_output), non-map figures (plot_output), and data files (data_output)
+  plot_output <- file.path(path0, "Figures/")
+  map_output <- file.path(path0, "Maps/")
   data_output <- file.path(path0, "Data/")
-  # source(paste0(dependencies,"loadDependencies_postProcessing.R"))
-  # source(paste0(dependencies,"map_by_fips_standalone.R"))
   
-  # import data if you don't want to use all of post-processing
-  # source(paste0(dependencies,"import_USDOS_Runs.R"))
-  # use postprocessing
+  # This directory contains R scripts with some necessary functions
+  dependencies <- file.path(path0,"Include_Files/")
   
-  setwd(path0)
-  Dur.long <- read.csv("Data/Duration_long.csv")
-  EpidExt.long <- read.csv("Data/EpidemicExtent_long.csv")
-  PremInf.long <- read.csv("Data/PremisesInfected_long.csv")
+  # Colors for comparison figures
+  static_col <- "#BC5369"
+  state_dep_col <- "#3E8CC9"
+  no_control_col <- "#CECD42"
+  delay1_col <- "grey90"
+  delay2_col <- "grey70"
+  delay3_col <- "grey50"
+  delay_colors <- colorRampPalette(c("black",state_dep_col))(3)
   
-  Dur.long <- Dur.long %>% mutate(cType = str_extract(type, "^[^_]+"))
-  Dur <- Dur.long %>%
-    mutate(trigger = str_extract(type, "^[^_]+"),
-           metric = "Duration (days)",
-          delay = case_when(str_detect(type, "static_newPremReportsOverX") ~ "0",
-                            str_detect(type, "flex_1Day") ~ "1",
-                            str_detect(type, "flex_2Days") ~ "2",
-                            str_detect(type, "flex_percentIncrease") ~ "3",
-                            str_detect(type, "noControl_noDiagnostics") ~ "No Control"),
-          cType = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                            str_detect(cType, "flex") ~ "State-dependent control",
-                            str_detect(cType, "static") ~ "Static control"),
-          type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                           str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
-                           str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
-                           str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
-                           str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
-
-  
-  Dur.long$metric <- "Duration (days)"
-  EpidExt.long$metric <-  "Number of infected counties"
-  PremInf.long$metric <-  "Number of infected premises"
-  
-  list <- list(Dur.long, 
-               EpidExt.long, 
-               PremInf.long)
-  
-  total.all <- do.call("rbind", list)
-
-# Create a new column "Delay" using case_when function from dplyr
-# Remove "1Day_" or "2Days_" prefix from the "type" column using separate function from tidyr
-total.all <- total.all %>% mutate(type = str_replace(type, ".*?_", "")) %>%
-  mutate(delay = case_when(
-    str_detect(type, "^1Day") ~ "1",
-    str_detect(type, "^2Days") ~ "2",
-    TRUE ~ "0"
-  )) %>%
-  mutate(cType = case_when(
-    str_detect(type, "noControl_noDiagnostics") ~ "No control",
-    str_detect(cType, "flex") ~ "State-dependent control",
-    str_detect(cType, "static") ~ "Static control")) %>%
-  mutate(type = str_replace(type, "^(1|2)(Day|Days)_", "")) %>%
-  mutate(trigger = str_extract(type, "^[^_]+")) %>%
-  mutate(type = str_replace(type, "^[^_]+_[^_]+_[^_]+_[^_]+_", "")) %>%
-  filter(!(type == "cull_cull_3000_10000_earliest_earliest" | type == "cull_cull_0_10000_earliest_earliest"))
-  
-  setwd(data_output)
-  write.csv(total.all, file = "Total.long.csv")
-
-jpeg("OutbreakMetrics_High_Panel.jpeg", width = 1800, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value > PremInf_cutoff,
-                   metric == "Number of infected counties" ~ Value > EpidExt_cutoff,
-                   metric == "Duration (days)" ~ Value > Dur_cutoff)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                   type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                   type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                   type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax")) %>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  labs(x = "Control Strategy", fill = "Control Strategy", color = "Control Strategy")+
-  facet_grid(metric~type, switch = "y", scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]),
-                    labels = c("State-dependent", "Static") )+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]),
-                     labels = c("State-dependent", "Static"))+
-  theme_bw()+
-  theme(legend.position = "none",
-    strip.text.x = element_text(size = 20, face = "bold"), 
-    strip.text.y = element_text(size = 20, face = "bold"),
-    axis.text.y = element_text(size =20),
-    axis.title.x.bottom = element_text(size = 24, face = "bold"),
-    axis.title.y.left = element_blank(),
-    axis.text.x.bottom = element_blank(),
-    legend.text = element_text(size = 20),
-    legend.title = element_text(size = 22),
-    strip.background.y = element_blank(),
-    strip.placement = "outside"
-  )
-dev.off()
-
-jpeg("OutbreakMetrics_High_Legend_Panel.jpeg", width = 2000, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value > PremInf_cutoff,
-                   metric == "Number of infected counties" ~ Value > EpidExt_cutoff,
-                   metric == "Duration (days)" ~ Value > Dur_cutoff)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  labs(x = "Control Strategy", fill = "Control Strategy", color = "Control Strategy")+
-  facet_grid(metric~type, switch = "y", scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]),
-                    labels = c("State-dependent", "Static") )+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]),
-                     labels = c("State-dependent", "Static"))+
-  theme_bw()+
-  theme(
-    strip.text.x = element_text(size = 20, face = "bold"), 
-    strip.text.y = element_text(size = 20, face = "bold"),
-    axis.text.y = element_text(size =20),
-    axis.title.x.bottom = element_text(size = 24, face = "bold"),
-    axis.title.y.left = element_blank(),
-    axis.text.x.bottom = element_blank(),
-    legend.text = element_text(size = 20),
-    legend.title = element_text(size = 22),
-    strip.background.y = element_blank(),
-    strip.placement = "outside"
-    )
-dev.off()
-
-jpeg("OutbreakMetrics_Low_Legend_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value <= PremInf_cutoff,
-                   metric == "Number of infected counties" ~ Value <= EpidExt_cutoff,
-                   metric == "Duration (days)" ~ Value <= Dur_cutoff)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  labs(x = "Control Strategy", fill = "Control Strategy", color = "Control Strategy")+
-  facet_grid(metric~type, switch = "y", scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]),
-                    labels = c("State-dependent", "Static") )+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]),
-                     labels = c("State-dependent", "Static"))+
-  theme_bw()+
-  theme(
-    strip.text.x = element_text(size = 20, face = "bold"), 
-    strip.text.y = element_text(size = 20, face = "bold"),
-    axis.text.y = element_text(size =20),
-    axis.title.x.bottom = element_text(size = 24, face = "bold"),
-    axis.title.y.left = element_blank(),
-    axis.text.x.bottom = element_blank(),
-    legend.text = element_text(size = 20),
-    legend.title = element_text(size = 22),
-    strip.background.y = element_blank(),
-    strip.placement = "outside"
-  )
-dev.off()
-
-jpeg("OutbreakMetrics_Low_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value <= PremInf_cutoff,
-                   metric == "Number of infected counties" ~ Value <= EpidExt_cutoff,
-                   metric == "Duration (days)" ~ Value <= Dur_cutoff)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  facet_grid(metric~type, switch = "y", scales = "free_y",
-             labeller = labeller(metric = label_wrap_gen())) +
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 17, face = "bold"), 
-        strip.text.y = element_text(size = 16, face = "bold"),
-        axis.text.y = element_text(size =18),
-        axis.text.x.bottom = element_blank(),
-        axis.title.y.left = element_blank(),
-        strip.background.y = element_blank(),
-        strip.placement = "outside")
-dev.off()
-
-jpeg("FRSES_Low_Legend_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value <= PremInf_cutoff,
-                   metric == "Number of infected counties" ~ Value <= EpidExt_cutoff,
-                   metric == "Duration (days)" ~ Value <= Dur_cutoff)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  facet_grid(metric~type, switch = "y", scales = "free_y",
-             labeller = labeller(metric = label_wrap_gen())) +
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 17, face = "bold"), 
-        strip.text.y = element_text(size = 16, face = "bold"),
-        axis.text.y = element_text(size =18),
-        axis.text.x.bottom = element_blank(),
-        axis.title.y.left = element_blank(),
-        strip.background.y = element_blank(),
-        strip.placement = "outside")
-dev.off()
-  
-jpeg("OutbreakMetrics_overMin_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value > PremInf_min,
-                   metric == "Number of infected counties" ~ Value > EpidExt_min,
-                   metric == "Duration (days)" ~ Value > Dur_min)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  facet_grid(metric~type, scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(legend.position = "none",
-        strip.text.x = element_text(size = 17, face = "bold"), 
-        strip.text.y = element_text(size = 16, face = "bold"),
-        axis.text.y = element_text(size =18),
-        axis.text.x.bottom = element_blank(),
-        axis.title.y.left = element_blank())
-dev.off()
-
-jpeg("OutbreakMetrics_overMin_Legend_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-total.all %>%
-  filter(case_when(metric == "Number of infected premises" ~ Value > PremInf_min,
-                   metric == "Number of infected counties" ~ Value > EpidExt_min,
-                   metric == "Duration (days)" ~ Value > Dur_min)) %>%
-  filter(!(type == "noControl_noDiagnostics"| trigger == "availability" | trigger == "decrease")) %>%
-  mutate(type = case_when(type == "cull_vax_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Vax",
-                          type == "cull_cull_0_-1_earliest_earliest" ~ "MB, IP Cull, DC Cull",
-                          type == "cull_vax_0_3000_earliest_earliest" ~ "MB, IP Cull, 3km Vax",
-                          type == "cull_vax_3000_10000_earliest_earliest" ~ "MB, IP Cull, 3km Cull, 10km Vax"))%>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  facet_grid(metric~type, scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 17, face = "bold"), 
-        strip.text.y = element_text(size = 16, face = "bold"),
-        axis.text.y = element_text(size =18),
-        axis.text.x.bottom = element_blank(),
-        axis.title.y.left = element_blank())
-dev.off()
+  # 1) Load necessary packages, 2) load functions for importing data files, 3) load map by fips functions
+  source(paste0(dependencies,"Package_Manager.R"))
+  source(paste0(dependencies,"Data_Manager.R"))
+  source(paste0(dependencies,"map_by_fips_standalone.R"))
+}
 
 #===============================================================================
 #
-#Cost analysis
+# 1) Generate files necessary for cost calculations using processUSDOS().
+# 2) All necessary files for operations below this section will be generated
+# and placed in a directory labeled "Data".
+# 3) processUSDOS() will also generate violin plots and maps for EDA 
+# to compare different USDOS run types.
+# 4) Warning: this function can take up to an hour to complete, depending on 
+# whether or not your machine has 4 or more cores to parallelize some operations.
+# The number of USDOS runs being processed will also affect run time.
 #
 #===============================================================================
+
 setwd(path0)
-Anim.long <- read.csv("Output_Files/Cull_Vax_030723.csv")
-Dur.long <- read.csv("Output_Files/Duration_long.csv")
-library(tidyr)
-library(dplyr)
+gc() # clear all unused memory because this function can use quite a bit of memory
+source("postProcessing_USDOSv2.1.R")
 
-gc()
+processUSDOS(export.datafiles = 3,
+             duration = T,
+             premInf = T,
+             epidemicExtent = T,
+             localSpread = F,
+             controlValue = F,
+             completionProportion = F,
+             plots = F,
+             maps = F,
+             dataExist = F,
+             usdos_output_file_path = "/webblab-nas/Webblab_Storage/DHS/USAMM_USDOS/USDOS/flexibleStrategy/Post_Processing/Files_To_Process/")
 
-Dur.long <- data.table(Dur.long) %>%
-  mutate(controlStatus = "Duration (days)",
-         delay = case_when(str_detect(type, "static_newPremReportsOverX") ~ "0",
-                           str_detect(type, "flex_1Day") ~ "1",
-                           str_detect(type, "flex_2Days") ~ "2",
-                           str_detect(type, "flex_percentIncrease") ~ "3",
-                           str_detect(type, "noControl_noDiagnostics") ~ "No Control"),
-         cType = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                           str_detect(type, "flex") ~ "State-dependent control",
-                           str_detect(type, "static") ~ "Static control"),
-         trigger = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                          str_detect(type,"percentIncrease") ~ "percentIncrease",
-                          str_detect(type,"newPremReportsOverX") ~ "newPremReportsOverX",
-                          str_detect(type,"availability") ~ "availability",
-                          str_detect(type,"decrease") ~ "decrease"),
-         type = case_when(cType == "State-dependent control" ~ str_extract(type, "\\d+_\\d+.*"),
-                          cType == "Static control" ~ str_extract(type, "\\d+_\\d+.*"),
-                          str_detect(trigger,"No control") ~ "No control")) %>%
-  mutate(Value = as.numeric(Value),
-         delay = as.factor(delay)) %>%
-  select(-fips & -polyname)
-# %>%
-#   pivot_wider(names_from = controlStatus, values_from = Value, values_fn = NULL) 
-# %>%
-#   mutate_if(is.numeric, ~replace(., is.na(.), 0))
-         # type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-         #                  str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
-         #                  str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
-         #                  str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
-         #                  str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
-
-gc()
-
-
-Anim.long <- data.table(Anim.long) %>% 
-  mutate(Value = as.numeric(anim),
-         delay = as.factor(delay)) %>%
-  select(-id & -Rep &  -anim) %>%
-  bind_rows(Dur.long)
-
-gc()
-
-#===============================================================================
-#
-# Checking calculations
-#
-#===============================================================================
-
-Dur.long %>%
-  filter(Value > Dur_cutoff) %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest")) %>%
-  filter(trigger == "percentIncrease" | trigger == "newPremReportsOverX") %>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  labs(x = "Control Strategy", fill = "Control Strategy", color = "Control Strategy")+
-  theme_bw()
-
-Anim.long %>%
-  filter(Value > 15000000 & controlStatus == "effective.cull") %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest")) %>%
-  filter(trigger == "percentIncrease" | trigger == "newPremReportsOverX") %>%
-  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
-  geom_violin()+
-  labs(x = "Control Strategy", fill = "Control Strategy", color = "Control Strategy")+
-  theme_bw()
-
-summaryTable <- Anim.long %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest")  | str_detect(type, "No control")) %>%
-  filter(trigger == "percentIncrease" | trigger == "newPremReportsOverX" | trigger == "No control") %>%
-  group_by(controlStatus,cType,type,delay)%>%
-  summarise(
-    mean = mean(Value),
-    median = median(Value),
-    min = min(Value),
-    max = max(Value)
-  )
-
-
-# Pivot Anim.long to wide data.frame to calculate a cost column
-wideAnim <- Anim.long %>%
-  mutate(id = row_number()) %>%
-  pivot_wider(names_from = controlStatus, values_from = Value, values_fn = NULL) %>%
-  mutate_if(is.numeric, ~replace(.,is.na(.),0))
-
-
-# wideAnim <- Dur.long %>%
-#   mutate(delay = as.numeric(delay))%>%
-#   left_join(Anim.long %>%
-#               filter(delay != "No control") %>%
-#               mutate(delay = as.numeric(delay)), 
-#             by = c("fips", "polyname", "type", "delay", "cType","trigger")) %>%
-#   mutate_if(is.numeric, ~replace(., is.na(.), 0))
-
-wideAnim$cost <- 1090*wideAnim$effective.cull+22*wideAnim$effective.vax + 2160000*wideAnim$`Duration (days)`
-wideAnim$cost <- 563000000*wideAnim$effective.cull+247000000*wideAnim$effective.vax + 2160000*wideAnim$`Duration (days)`
-#wideAnim$cost_noDuration <- 1090*wideAnim$effective.cull+22*wideAnim$effective.vax
-
-cost_cutoff = quantile(wideAnim$cost, 0.975)
-cost_cutoff = 15000000000
-cost_min = min(wideAnim$cost)
-
-wideAnim <- wideAnim %>% 
-  mutate(level = case_when(cost > cost_cutoff ~ "High",
-                           cost <= cost_cutoff ~ "Low",
-                           cost > cost_min ~ "OverMin"),
-         level = case_when(cost > cost_cutoff ~ "Top 2.5% of outbreaks",
-                           cost <= cost_cutoff ~ "97.5% of outbreaks")) %>% 
-  filter(trigger != "availability" & trigger != "decrease" & trigger != "No control") %>% #& !is.na(type) & trigger != "No control"
-  filter(`Duration (days)` < 364)
-  
-  
-
-setwd(path_output)
-jpeg("Cost_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-wideAnim %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest") | str_detect(type, "No control")) %>%
-  ggplot(aes(x =cType, y = cost, col = cType, fill = cType)) + 
-  geom_violin()+
-  labs(x = "Control Strategy", y = "Cost (USD)")+
-  facet_grid(~level, scales = "free", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 22, face = "bold"), 
-        strip.text.y = element_text(size = 22, face = "bold"),
-        axis.text.y = element_text(size = 20),
-        axis.text.x = element_text(size = 24),
-        axis.title.y.left = element_text(size = 24),
-        axis.title.x.bottom = element_text(size = 24))
-dev.off()
-
-jpeg("Cost_Upper.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-wideAnim %>% 
-  mutate(level = case_when(cost > cost_cutoff ~ "Top 2.5% of outbreaks",
-                           cost <= cost_cutoff ~ "97.5% of outbreaks")) %>%
-  filter(!is.na(type) & trigger != "availability" & trigger != "decrease" & cost > cost_cutoff) %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest") | str_detect(type, "No control")) %>%
-  ggplot(aes(x = cType, y = cost, col = cType, fill = cType)) + 
-  geom_violin()+
-  labs(x = "Control Strategy", y = "Cost (USD)", colour = "Control Strategy", fill = "Control Strategy")+
-  scale_fill_manual(values = c("yellow3",cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c("black","black","black"))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 22, face = "bold"), 
-        strip.text.y = element_text(size = 22, face = "bold"),
-        axis.text.y = element_text(size = 20),
-        axis.text.x = element_text(size = 24),
-        axis.title.y.left = element_text(size = 24),
-        axis.title.x.bottom = element_text(size = 24))
-dev.off()
-
-jpeg("Cost_Lower.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-wideAnim %>% 
-  mutate(level = case_when(cost > cost_cutoff ~ "Top 2.5% of outbreaks",
-                           cost <= cost_cutoff ~ "97.5% of outbreaks")) %>%
-  filter(!is.na(type) & trigger != "availability" & trigger != "decrease" & cost <= cost_cutoff) %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest") | str_detect(type, "No control")) %>%
-  ggplot(aes(x = cType, y = cost, col = cType, fill = cType)) + 
-  geom_violin()+
-  labs(x = "Control Strategy", y = "Cost (USD)", colour = "Control Strategy", fill = "Control Strategy")+
-  scale_fill_manual(values = c("yellow3",cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c("black","black","black"))+
-  theme_bw()+
-  theme(strip.text.x = element_text(size = 22, face = "bold"), 
-        strip.text.y = element_text(size = 22, face = "bold"),
-        axis.text.y = element_text(size = 20),
-        axis.text.x = element_text(size = 24),
-        axis.title.y.left = element_text(size = 24),
-        axis.title.x.bottom = element_text(size = 24))
-dev.off()
-
-#===============================================================================
-#
-#Cost analysis - no duration
-#
-#===============================================================================
-
-wideAnim <- data.table(Anim.long) %>% 
-  mutate(fips = FIPS,
-         Value = anim) %>%
-  select(-id & -Rep & -FIPS & -anim) %>%
-  left_join(county.summary, by = "fips")  %>%
-  mutate(Value = as.numeric(Value)) %>%
-  pivot_wider(names_from = controlStatus, values_from = Value, values_fn = median) %>%
-  mutate_if(is.numeric, ~replace(., is.na(.), 0))
-
-
-wideAnim$cost <- 1090*wideAnim$effective.cull+22*wideAnim$effective.vax
-
-hist(wideAnim$cost[wideAnim$cost>620000000])
-
-cost_cutoff = quantile(wideAnim$cost, 0.975)
-cost_cutoff = 1000000000
-cost_cutoff = 620000000
-cost_min = min(wideAnim$cost)
-
-wideAnim <- wideAnim %>% 
-  mutate(level = case_when(cost > cost_cutoff ~ "High",
-                           cost <= cost_cutoff ~ "Low",
-                           cost > cost_min ~ "OverMin"))
-
-foo <- wideAnim %>% 
-  mutate(level = case_when(cost > cost_cutoff ~ "Top 2.5% of outbreaks",
-                           cost <= cost_cutoff ~ "97.5% of outbreaks")) %>%
-  filter(!is.na(type)) %>%
-  filter(str_detect(type, "cull_vax_0_-1_earliest_earliest"), 
-         (trigger == "percentIncrease" | trigger == "newPremReportsOverX"),
-         (delay == 3 | delay == 0), 
-         (cType == "State-dependent control" | cType == "Static control"))
-
-
-jpeg("Cost_Panel.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-foo %>%
-  ggplot(aes(x = cType, y = cost, col = cType, fill = cType)) + 
-  geom_violin()+
-  labs(x = "Control Strategy", y = "Cost (USD)")+
-  facet_grid(~level, scales = "free_y", 
-             labeller = label_wrap_gen())+
-  scale_fill_manual(values = c(cbPalette[1],cbPalette[12]))+
-  scale_color_manual(values = c(cbPalette[1],cbPalette[12]))+
-  theme_bw()+
-  theme(legend.position = "none",
-        strip.text.x = element_text(size = 22, face = "bold"), 
-        strip.text.y = element_text(size = 22, face = "bold"),
-        axis.text.y = element_text(size = 20),
-        axis.text.x = element_text(size = 24),
-        axis.title.y.left = element_text(size = 24),
-        axis.title.x.bottom = element_text(size = 24))
-dev.off()
-
-#===============================================================================
-#
-# Decision delay
-#
-#===============================================================================
-setwd(data_output)
-Dur.long <- read.csv("Duration_long.csv")
-EpidExt.long <- read.csv("EpidemicExtent_long.csv")
-PremInf.long <- read.csv("PremisesInfected_long.csv")
+setwd(path0)
+Dur.long <- read.csv("Data/Duration_long.csv")
+EpidExt.long <- read.csv("Data/EpidemicExtent_long.csv")
+PremInf.long <- read.csv("Data/PremisesInfected_long.csv")
 
 Dur.long <- Dur.long %>% mutate(cType = str_extract(type, "^[^_]+"))
 Dur <- Dur.long %>%
@@ -565,194 +86,177 @@ Dur <- Dur.long %>%
                           str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
                           str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
 
-EpidExt <- EpidExt.long %>%
-  mutate(trigger = str_extract(type, "^[^_]+"),
-         metric = "Duration (days)",
-         delay = case_when(str_detect(type, "static_newPremReportsOverX") ~ "0",
-                           str_detect(type, "flex_1Day") ~ "1",
-                           str_detect(type, "flex_2Days") ~ "2",
-                           str_detect(type, "flex_percentIncrease") ~ "3",
-                           str_detect(type, "noControl_noDiagnostics") ~ "No Control"),
-         cType = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                           str_detect(cType, "flex") ~ "State-dependent control",
-                           str_detect(cType, "static") ~ "Static control"),
-         type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                          str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
-                          str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
-                          str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
-                          str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
 
-PremInf <- PremInf.long %>%
-  mutate(trigger = str_extract(type, "^[^_]+"),
-         metric = "Duration (days)",
-         delay = case_when(str_detect(type, "static_newPremReportsOverX") ~ "0",
-                           str_detect(type, "flex_1Day") ~ "1",
-                           str_detect(type, "flex_2Days") ~ "2",
-                           str_detect(type, "flex_percentIncrease") ~ "3",
-                           str_detect(type, "noControl_noDiagnostics") ~ "No Control"),
-         cType = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                           str_detect(cType, "flex") ~ "State-dependent control",
-                           str_detect(cType, "static") ~ "Static control"),
-         type = case_when(str_detect(type, "noControl_noDiagnostics") ~ "No control",
-                          str_detect(type,"cull_vax_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Vax",
-                          str_detect(type,"cull_cull_0_-1_earliest_earliest") ~ "MB, IP Cull, DC Cull",
-                          str_detect(type,"cull_vax_0_3000_earliest_earliest") ~ "MB, IP Cull, 3km Vax",
-                          str_detect(type,"cull_vax_3000_10000_earliest_earliest") ~ "MB, IP Cull, 3km Cull, 10km Vax"))
+Dur.long$metric <- "Duration (days)"
+EpidExt.long$metric <-  "Number of infected counties"
+PremInf.long$metric <-  "Number of infected premises"
 
+list <- list(Dur.long, 
+             EpidExt.long, 
+             PremInf.long)
 
-Dur <- Dur %>%
-  filter(Value > Dur_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na()
+total.all <- do.call("rbind", list)
 
-EpidExt <- EpidExt %>%
-  filter(Value > EpidExt_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na()
+# Create a new column "Delay" using case_when function from dplyr
+# Remove "1Day_" or "2Days_" prefix from the "type" column using separate function from tidyr
+total.all <- total.all %>% mutate(type = str_replace(type, ".*?_", "")) %>%
+  mutate(delay = case_when(
+    str_detect(type, "^1Day") ~ "1",
+    str_detect(type, "^2Days") ~ "2",
+    TRUE ~ "0"
+  )) %>%
+  mutate(cType = case_when(
+    str_detect(type, "noControl_noDiagnostics") ~ "No control",
+    str_detect(cType, "flex") ~ "State-dependent control",
+    str_detect(cType, "static") ~ "Static control")) %>%
+  mutate(type = str_replace(type, "^(1|2)(Day|Days)_", "")) %>%
+  mutate(trigger = str_extract(type, "^[^_]+")) %>%
+  mutate(type = str_replace(type, "^[^_]+_[^_]+_[^_]+_[^_]+_", "")) %>%
+  filter(!(type == "cull_cull_3000_10000_earliest_earliest" | type == "cull_cull_0_10000_earliest_earliest"))
 
-PremInf <- PremInf %>%
-  filter(Value > PremInf_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na()
+setwd(data_output)
+write.csv(total.all, file = "Total.long.csv")
+
+#===============================================================================
+#
+# Load some data
+#
+#===============================================================================
+setwd(data_output)
+total.all <- read.csv("Total.long.csv")
+
+#===============================================================================
+#
+# Create outbreak metric panels (no control runs not included)
+#
+#===============================================================================
+
+plot_data <- total.all %>%
+  filter(delay == 0 | delay == 3) %>%
+  filter(str_detect(type, "MB, IP Cull, DC Vax") |
+           str_detect(type, "MB, IP Cull, 3km Cull, 10km Vax") |
+           str_detect(type, "MB, IP Cull, 3km Vax") |
+           str_detect(type, "MB, IP Cull, DC Cull")) %>%
+  mutate(level = case_when(metric == "Duration (days)" & Value > Dur_cutoff ~ "Top 2.5% of outbreaks",
+                           metric == "Duration (days)" & Value <= Dur_cutoff ~ "97.5% of outbreaks",
+                           metric == "Number of infected premises" & Value > PremInf_cutoff ~ "Top 2.5% of outbreaks",
+                           metric == "Number of infected premises" & Value <= PremInf_cutoff ~ "97.5% of outbreaks",
+                           metric == "Number of infected counties" & Value > EpidExt_cutoff ~ "Top 2.5% of outbreaks",
+                           metric == "Number of infected counties" & Value <= EpidExt_cutoff ~ "97.5% of outbreaks")) %>%
+  mutate(level = factor(level, levels = c("Top 2.5% of outbreaks","97.5% of outbreaks")))
+
+duration <- plot_data %>%
+  filter(metric == "Duration (days)") %>%
+  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
+  geom_violin()+
+  labs(x = NULL, y = "Duration (days)",fill = "Control Strategy", color = "Control Strategy")+
+  facet_grid(level~type, switch = "y", scales = "free_y", 
+             labeller = label_wrap_gen())+
+  scale_fill_manual(values = c(state_dep_col,static_col))+
+  scale_color_manual(values = rep("black",2))+
+  theme_bw()+
+  theme(strip.text.x = element_text(size = 12, face = "bold"), 
+        strip.text.y = element_blank(),
+        axis.text.y = element_text(size =12),
+        axis.title.x.bottom = element_text(size = 12, face = "bold"),
+        axis.title.y.left = element_text(size = 12),
+        axis.text.x.bottom = element_blank(),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        strip.background.y = element_blank(),
+        strip.placement = "outside")
+
+preminf <- plot_data %>%
+  filter(metric == "Number of infected premises") %>%
+  ggplot(aes(x = cType, y = Value, fill = cType, col = cType)) +
+  geom_violin()+
+  labs(x = NULL, y = "Number of infected premises",fill = "Control Strategy", color = "Control Strategy")+
+  facet_grid(level~type, switch = "y", scales = "free_y", 
+             labeller = label_wrap_gen())+
+  scale_fill_manual(values = c(state_dep_col,static_col))+
+  scale_color_manual(values = rep("black",2))+
+  theme_bw()+
+  theme(strip.text.x = element_blank(), 
+        strip.text.y = element_blank(),
+        axis.text.y = element_text(size =12),
+        axis.title.x.bottom = element_text(size = 12, face = "bold"),
+        axis.title.y.left = element_text(size = 12),
+        axis.text.x.bottom = element_blank(),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        strip.background.y = element_blank(),
+        strip.placement = "outside")
+
+epidext <- plot_data %>%
+  filter(metric == "Number of infected counties") %>%
+  ggplot(aes(x = cType, y = (Value), fill = cType, col = cType)) +
+  geom_violin()+
+  labs(x = NULL, y = "Number of infected counties",fill = "Control Strategy", color = "Control Strategy")+
+  facet_grid(level~type, switch = "y", scales = "free_y", 
+             labeller = label_wrap_gen())+
+  scale_fill_manual(values = c(state_dep_col,static_col))+
+  scale_color_manual(values = rep("black",2))+
+  theme_bw()+
+  theme(strip.text.x = element_blank(), 
+        strip.text.y = element_blank(),
+        axis.text.y = element_text(size =12),
+        axis.title.x.bottom = element_text(size = 12, face = "bold"),
+        axis.title.y.left = element_text(size = 12),
+        axis.text.x.bottom = element_blank(),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        strip.background.y = element_blank(),
+        strip.placement = "outside")
+
+Outbreak_Metrics_All <- ggarrange(duration+labs(tag = "(a)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
+                                  preminf+labs(tag = "(b)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
+                                  epidext+labs(tag = "(c)")+theme(plot.tag = element_text(size = 14, face = "bold")),
+                                  ncol = 1, common.legend = TRUE, legend = "bottom", align = "v")
+
+# ggsave(filename = "Outbreak_Metrics_All.jpeg", plot = Outbreak_Metrics_All, 
+#        path = plot_output, width = 9, height = 8, units = "in", dpi = 800)
 
 setwd(plot_output)
-jpeg("Delay_PremInfHigh.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-PremInf %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected premises", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
-
-jpeg("Delay_EpidExtHigh.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-EpidExt %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
-
-jpeg("Delay_DurationHigh.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-Dur %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
+#jpeg("Outbreak_Metrics_All.jpeg", width = 1810, height = 1800, units = 'px', res = 100)
+jpeg("Outbreak_Metrics_All.jpeg", width = 900, height = 800, units = 'px', res = 100)
+ggarrange(duration+labs(tag = "(a)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
+          preminf+labs(tag = "(b)")+theme(plot.tag = element_text(size = 14, face = "bold")), 
+          epidext+labs(tag = "(c)")+theme(plot.tag = element_text(size = 14, face = "bold")),
+          ncol = 1, common.legend = TRUE, legend = "bottom", align = "v")
 dev.off()
 
 #===============================================================================
 #
-# Lower
+# Decision delay
 #
 #===============================================================================
-setwd(plot_output)
-jpeg("Delay_PremInf_Low.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-PremInf %>%
-  filter(Value < EpidExt_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected premises", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
+plot_data <- total.all %>%
+  tibble() %>%
+  filter(((type == "MB, IP Cull, DC Vax") |
+            (type == "No control")) &
+           (metric == "Number of infected premises")
+  ) %>%
+  mutate(level = case_when(Value > PremInf_cutoff ~ "Top 2.5% of outbreaks",
+                           Value <= PremInf_cutoff ~ "97.5% of outbreaks"),
+         level = factor(level, levels = c("Top 2.5% of outbreaks","97.5% of outbreaks"))) %>%
+  drop_na()
 
-jpeg("Delay_EpidExt_Low.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-EpidExt %>%
-  filter(Value < EpidExt_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
-
-jpeg("Delay_Duration_Low.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-Dur %>%
-  filter(Value < Dur_cutoff &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
-
-#===============================================================================
-#
-# Over min
-#
-#===============================================================================
+delay_colors <- colorRampPalette(c("darkblue",state_dep_col))(3)
 
 setwd(plot_output)
-jpeg("Delay_PremInf_OverMin.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-PremInf %>%
-  filter(Value > PremInf_min &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
+jpeg("DecisionDelay_PremInf.jpeg", width = 900, height = 800, units = 'px', res = 100)
+plot_data %>%
+  ggplot(aes(x = delay, y = log10(Value), fill = delay, col = delay)) +
   geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
+  scale_fill_manual(values = c(static_col,delay_colors,no_control_col))+
   scale_color_manual(values = c("black","black","black","black","black"))+
   theme_bw() +
-  labs(y = "Number of infected premises", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
+  labs(x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") +
+  ylab(expression(log[10]("Number of infected premises"))) +
+  facet_grid(level~., switch = "y", scales = "free_y",
+             labeller = label_wrap_gen()) +
   theme(legend.position = "none",
-        strip.text.x = element_blank(), 
+        strip.text.x = element_blank(),
         strip.text.y = element_blank(),
         axis.text.y = element_text(size = 28),
         axis.title.y = element_text(size = 32),
@@ -760,46 +264,227 @@ PremInf %>%
         axis.title.x = element_text(size = 32))
 dev.off()
 
-jpeg("Delay_EpidExt_OverMin.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-EpidExt %>%
-  filter(Value > EpidExt_min &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
+#===============================================================================
+#
+# Cost panels with all three scenarios
+#
+#===============================================================================
+setwd(data_output)
+Anim.long_new <- read.csv("Dur_Cull_Vax_NumInf_2024-07-26.csv") # change date to when file was generated
+
+outbreak_cost <- Anim.long %>%
+  filter(str_detect(type, 
+                    "0_0_cull_vax_0_-1_earliest_earliest_0_0|0_10_cull_vax_0_-1_earliest_earliest_3_3")) %>%
+  filter(Duration < 365) %>%
+  mutate(cost_all = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + (cullEffective*255.5) + (vaxEffective*6))/1e9,
+         cost_live = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*6))/1e9,
+         cost_kill = (ifelse(Duration == 365, (Duration * 12000000)*2, (Duration * 12000000)) + ((Num_Inf_No_Control+cullEffective)*255.5) + (vaxEffective*255.5))/1e9)
+
+cost_cutoff = round(quantile(outbreak_cost$cost_all, 0.975, na.rm = T), digits = 1)
+cost_cutoff_live = round(quantile(outbreak_cost$cost_live, 0.975, na.rm = T), digits = 1)
+cost_cutoff_kill = round(quantile(outbreak_cost$cost_kill, 0.975, na.rm = T), digits = 1)
+
+cost_long <- outbreak_cost %>%
+  pivot_longer(cols = starts_with("cost"), 
+               names_to = "cost_type", 
+               values_to = "cost_value") %>%
+  mutate(cost_mag = case_when(cost_value > cost_cutoff & cost_type == "cost_all" ~ "Top 2.5% of outbreaks",
+                              cost_value <= cost_cutoff & cost_type == "cost_all" ~ "97.5% of outbreaks",
+                              cost_value > cost_cutoff_live & cost_type == "cost_live" ~ "Top 2.5% of outbreaks",
+                              cost_value <= cost_cutoff_live & cost_type == "cost_live" ~ "97.5% of outbreaks",
+                              cost_value > cost_cutoff_kill & cost_type == "cost_kill" ~ "Top 2.5% of outbreaks",
+                              cost_value <= cost_cutoff_kill & cost_type == "cost_kill" ~ "97.5% of outbreaks"),
+         cost_type = case_when(cost_type == "cost_all" ~ "recovered animals live",
+                               cost_type == "cost_live" ~ "vaccinate-to-live",
+                               cost_type == "cost_kill" ~ "vaccinate-to-kill"),
+         cost_type = factor(cost_type, levels = c("recovered animals live",
+                                                  "vaccinate-to-live",
+                                                  "vaccinate-to-kill"))) %>%
+  filter(!str_detect(control_type, "No control"))
+
+cost_long %>%
+  filter(str_detect(cost_mag,"97.5")) %>%
+  ggplot(aes(x = control_type, y = cost_value, 
+             fill = control_type, color = control_type)) +
+  geom_violin() +
+  scale_y_continuous(
+    breaks = round(seq(min(cost_long$cost_value),cost_cutoff, length.out = 6),1),
+    limits = c(min(cost_long$cost_value),cost_cutoff)) + 
+  labs(x = "Economic scenario", y = "Cost (USD)", fill = "Control strategy")+
+  scale_fill_manual(values = c(state_dep_col,static_col))+
+  scale_color_manual(values = c("black","black","black"))+
   theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
+  facet_grid(cost_type~cost_mag, scales = "free_y", switch = "y") + 
+  theme(strip.text.y = element_text(size = 20),
+        axis.title.y = element_text(size = 26),
+        strip.background.y = element_blank(),
+        strip.text.x = element_text(size = 20, face = "bold"),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.ticks.y = element_blank(),
+        legend.position = "none",
+        axis.title.x = element_blank()) +
+  coord_flip() -> cost_low
+
+cost_long %>%
+  filter(str_detect(cost_mag,"2.5")) %>%
+  ggplot(aes(x = control_type, y = cost_value, 
+             fill = control_type, color = control_type)) +
+  geom_violin() +
+  scale_y_continuous(
+    breaks = round(seq(cost_cutoff_kill, max(cost_long$cost_value), length.out = 6),1),
+    limits = c(cost_cutoff,max(cost_long$cost_value))) +
+  labs(x = "Economic scenario", y = "Cost (USD)", fill = "Control strategy", color = "Control strategy")+
+  scale_fill_manual(values = c(state_dep_col,static_col))+
+  scale_color_manual(values = c("black","black","black"))+
+  theme_bw() +
+  facet_grid(cost_type~cost_mag, scales = "free_y", switch = "y") + 
+  theme(strip.text.y = element_blank(),
+        strip.background.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 20),
+        axis.ticks.y = element_blank(),
+        strip.text.x = element_text(size = 22, face = "bold"),
+        legend.position = c(0.75,0.75),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank()) +
+  coord_flip() -> cost_high
+
+cost_arranged <- ggarrange(cost_low, cost_high, align = "h")
+
+library(grid)
+jpeg("Cost_Panel_AllScenarios.jpeg", width = 1000, height = 1000, units = 'px', res = 100)
+annotate_figure(cost_arranged,bottom = textGrob("Cost (in billion USD)",gp = gpar(fontsize = 26)))
 dev.off()
 
-jpeg("Delay_Duration_OverMin.jpeg", width = 1500, height = 1300, units = 'px', res = 100)
-Dur %>%
-  filter(Value > Dur_min &
-           (type == "MB, IP Cull, DC Vax" | type == "No control")) %>%
-  drop_na() %>%
-  ggplot(aes(x = delay, y = Value, fill = delay, col = delay)) +
-  geom_violin()+
-  scale_fill_manual(values = c("black","yellow3",cbPalette[1],cbPalette[12],"grey"))+
-  scale_color_manual(values = c("black","black","black","black","black"))+
-  theme_bw() +
-  labs(y = "Number of infected counties", x = "Days required for decision-making", colour = "Control Strategy", fill = "Control Strategy") + 
-  theme(legend.position = "none",
-        strip.text.x = element_blank(), 
-        strip.text.y = element_blank(),
-        axis.text.y = element_text(size = 28),
-        axis.title.y = element_text(size = 32),
-        axis.text.x = element_text(size = 28),
-        axis.title.x = element_text(size = 32))
-dev.off()
+#===============================================================================
+#
+# P(Complete/Fade-Out) Panel
+#
+#===============================================================================
 
+setwd(data_output)
+Anim.long <- read.csv("Control_Completion_2023-06-07.csv") # Change date to when the file was generated
+
+#1 assigned to take off & Fade out, respectively for analyses
+Anim.long$Over5000 = Anim.long$Num_Inf > 5000
+Anim.long$Over5000 = ifelse(Anim.long$Over5000, 1, 0)
+
+Anim.long$Fade.Out = Anim.long$Num_Inf > 1 & Anim.long$Num_Inf < 5000 & Anim.long$Duration < 365
+Anim.long$Fade.Out = ifelse(Anim.long$Fade.Out, 1, 0)
+
+fadeout <- glm(Fade.Out~factor(delay)*Duration, data = subset(Anim.long, Num_Inf > 1), family = binomial(link = "logit"))
+dur_values <- round(seq(14, 365, length.out = 1000),0)
+newdata <- data.frame(expand_grid(dur_values,factor(c(0,1,2,3))))
+colnames(newdata) <- c("Duration","delay")
+Prob_FadeOut_Data <- predict(fadeout, newdata = newdata, se.fit = TRUE) %>% 
+  as.data.frame() %>% 
+  mutate(
+    # model object mod1 has a component called linkinv that 
+    # is a function that inverts the link function of the GLM:
+    lower = fadeout$family$linkinv(fit - 1.96*se.fit), 
+    prob = fadeout$family$linkinv(fit), 
+    upper = fadeout$family$linkinv(fit + 1.96*se.fit)) %>%
+  bind_cols(newdata) %>%
+  mutate(delay = as.character(delay),
+         delay = case_when(delay == 0 ~ "Fixed control",
+                           TRUE ~ delay),
+         delay = factor(delay))
+
+tidy_model <- tidy(fadeout)
+
+tidy_model$p.value <- format(tidy_model$p.value, scientific = TRUE, digits = 2)
+
+kable(tidy_model, format = "latex", booktabs = TRUE, linesep = "")
+
+completed <- glm(completed~factor(delay)*Duration, data = subset(Anim.long, Duration < 365 & Num_Inf > 1), family = binomial(link = "logit"))
+dur_values <- round(seq(14, max(Anim.long$Duration), length.out = 1000),0)
+newdata <- data.frame(expand_grid(dur_values,factor(c(0,1,2,3))))
+colnames(newdata) <- c("Duration","delay")
+tidy(completed)
+Prob_Completed_Data <- predict(completed, newdata = newdata, se.fit = TRUE) %>% 
+  as.data.frame() %>% 
+  mutate(
+    # model object mod1 has a component called linkinv that 
+    # is a function that inverts the link function of the GLM:
+    lower = completed$family$linkinv(fit - 1.96*se.fit), 
+    prob = completed$family$linkinv(fit), 
+    upper = completed$family$linkinv(fit + 1.96*se.fit)) %>%
+  bind_cols(newdata) %>%
+  mutate(delay = as.character(delay),
+         delay = case_when(delay == 0 ~ "Fixed control",
+                           TRUE ~ delay),
+         delay = factor(delay))
+
+tidy_model <- tidy(completed)
+
+tidy_model$p.value <- format(tidy_model$p.value, scientific = TRUE, digits = 2)
+
+kable(tidy_model, format = "latex", booktabs = TRUE, linesep = "")
+
+delay_colors <- colorRampPalette(c("darkblue",state_dep_col))(3)
+
+Prob_completed <- Prob_Completed_Data %>%
+  ggplot(aes(x = Duration, y = prob, color = factor(delay), fill = factor(delay)))+
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+  geom_line(size = 1.5) +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0,100,200,300,365)) +  
+  scale_color_manual(values = c(delay_colors, static_col)) + 
+  scale_fill_manual(values = c(delay_colors, static_col)) +
+  labs(y="P(Complete Control Sequence)", 
+       x="Duration (Days)", 
+       fill = "Delay (Days)", color = "Delay (Days)", tag = "(a)" ## removed because no longer in a panel
+  ) +
+  theme(strip.text.x = element_blank(), 
+        strip.text.y = element_blank(),
+        axis.text.y = element_text(size = 18),
+        axis.title.y = element_text(size = 20),
+        # axis.text.x = element_text(size = 28),
+        # axis.title.x = element_text(size = 32),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = c(0.8,0.55),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        plot.tag = element_text(size = 24, face = "bold"))+
+  guides(color = guide_legend(override.aes = list(size=1))) +
+  coord_cartesian(xlim = c(0,365))
+
+
+Prob_FadeOut <- Prob_FadeOut_Data %>%
+  ggplot(aes(x = Duration, y = prob, color = factor(delay), fill = factor(delay)))+
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+  geom_line(size = 1.5) +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0,100,200,300,365)) +
+  scale_color_manual(values = c(delay_colors, static_col)) + 
+  scale_fill_manual(values = c(delay_colors, static_col)) +
+  labs(y="P(Outbreak Fade-Out)", 
+       x="Duration (Days)", 
+       fill = "Delay", color = "Delay", tag = "(b)") +
+  theme(strip.text.x = element_blank(), 
+        strip.text.y = element_blank(),
+        axis.text.y = element_text(size = 18),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 18),
+        axis.title.x = element_text(size = 20),
+        legend.position = "none",
+        plot.tag = element_text(size = 24, face = "bold"))+
+  guides(color = guide_legend(override.aes = list(size=1))) +
+  coord_cartesian(xlim = c(0,365))
+
+Prob_Complete_FadeOut <- ggarrange(Prob_completed, Prob_FadeOut, common.legend = FALSE, ncol = 1, align = "v")
+
+ggsave(filename = "Prob_Complete_FadeOut.jpeg", plot = Prob_Complete_FadeOut, 
+       path = plot_output, width = 8, height = 10, units = "in", dpi = 800)
+
+setwd(plot_output)
+jpeg("Prob_Complete_FadeOut.jpeg", width = 800, height = 1000, units = 'px', res = 100)
+ggarrange(Prob_completed, Prob_FadeOut, common.legend = FALSE, ncol = 1, align = "v")
+dev.off()
 
 #===============================================================================
 #

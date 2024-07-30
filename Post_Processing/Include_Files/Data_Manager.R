@@ -643,7 +643,6 @@ flaps_file_list <- lapply(1:10, function(flap) {
     run.anim$control_type <- new_cols$control_type
     
     Anim.list[[file]] <- run.anim
-    print(file)
   }
   
   Anim.long <- bind_rows(Anim.list)
