@@ -85,6 +85,7 @@ processUSDOS = function(export.datafiles= 0,
                         map_color = "color_red",
                         ls_match = TRUE,
                         controlValue = FALSE,
+                        completionProportion = TRUE,
                         maps = FALSE,
                         plots = FALSE,
                         dataExist = FALSE,
@@ -364,6 +365,23 @@ if(controlValue == TRUE | animalsControlled == TRUE){
                                              export.datafiles = export.datafiles, 
                                              path_output = data_output) 
   }
+}
+
+if(completetionProportion == TRUE){
+  print("Control value calculations are still under development. This operation will only produce a dataframe used to calculate value.")
+  
+  setwd(path0)
+  ## Find all the detail files in the Files_To_Process" directory ##
+  summary.files <- list.files(path = pathfiles, recursive = TRUE, pattern = "_summary.txt", full.names = FALSE)
+  # Read through each controlSummary file 
+  # Filter summary files
+  summary.files <- summary.files[grep("cull_vax_0_-1_earliest_earliest", summary.files)]
+  summary.files <- summary.files[grep("newPremReportsOverX|percentIncrease", summary.files)]
+  
+  Anim.long <- .import_controlWaitlistSummaryFiles(summary.files = summary.files,
+                                                   pathfiles = pathfiles,
+                                                   export.datafiles = export.datafiles,
+                                                   path_output = data_output)
 }
 
 if (export.datafiles > 0) {

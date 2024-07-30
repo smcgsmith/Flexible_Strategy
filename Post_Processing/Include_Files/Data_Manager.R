@@ -615,66 +615,38 @@ flaps_file_list <- lapply(1:10, function(flap) {
 #' @return a data frame with the completion summary data for all input files
 #'
 #' @export
-.import_controlWaitlistSummaryFiles = function (summary.files = NULL, pathfiles = NULL, export.datafiles = 1, path_output = NULL) {
+.import_controlWaitlistSummaryFiles = function (summary.files = NULL, pathfiles = NULL, 
+                                                export.datafiles = 1, path_output = NULL) {
   
   print("Importing USDOS control output files for completion figures.")
   
   Anim.list <- list()
-
-  # Read through each summary/detail file 
-  for (file in 1:length(summary.files)){
-    # read summary file
-    if((str_detect(summary.files[file], "cull") & str_detect(summary.files[file], "vax")) |
-       str_detect(summary.files[file], "cullVax")) {
-      vax <- fread(cmd = paste('grep', 'effective.vax', paste0(pathfiles,summary.files[file])))
-      cull <- fread(cmd = paste('grep', 'effective.cull', paste0(pathfiles,summary.files[file])))
-
-      sum.file <- bind_rows(cull,vax)
-      colnames(sum.file) <- c("Rep","tStep","farmID","FIPS","controlStatus")
-    } else if (str_detect(summary.files[file], "vax")) {
-      sum.file <- fread(cmd = paste('grep', 'effective.vax', paste0(pathfiles,summary.files[file])))
-
-      colnames(sum.file) <- c("Rep","tStep","farmID","FIPS","controlStatus")
-    } else if (str_detect(summary.files[file], "cull")) {
-      sum.file <- fread(cmd = paste('grep', 'effective.cull', paste0(pathfiles,summary.files[file])))
-
-      colnames(sum.file) <- c("Rep","tStep","farmID","FIPS","controlStatus")
-    } else {
-      vax <- tryCatch(fread(cmd = paste('grep', 'effective.vax', paste0(pathfiles,summary.files[file]))))
-      cull <- tryCatch(fread(cmd = paste('grep', 'effective.cull', paste0(pathfiles,summary.files[file]))))
-
-      sum.file <- bind_rows(cull,vax)
-    }
-    
-    # Number of reps. Used to fill in where no control occured
-    numReps <- 1:3049
-    
-    rep.totals <- sum.file %>%
-      distinct(Rep, controlStatus, .keep_all = TRUE) %>%
-      complete(Rep = numReps, fill = list(controlStatus = "none", farmID = 0, tStep = 0, FIPS = 0)) %>% #farmID = 0, tStep = 0, FIPS = 0, anim = 0
-      group_by(Rep) %>%
-      summarise(completed = all(c("effective.cull", "effective.vax") %in% controlStatus), 
-                partial = all(("effective.cull" %in% controlStatus) & !("effective.vax" %in% controlStatus)),
-                noControl = all("none" %in% controlStatus)) %>%
-      # mutate(completed = case_when(completed == FALSE ~ 0, TRUE ~ 1),
-      #        partial = case_when(partial == FALSE ~ 0, TRUE ~ 1),
-      #        noControl = case_when(noControl == FALSE ~ 0, TRUE ~ 1)) %>%
-      summarise(prop_both = mean(completed), prop_one = mean(partial), prop_none = mean(noControl))
-    
-    run.anim=rep.totals
-    
-    rm(rep.totals, cull, vax, sum.file)
-    gc()
-    
-    run.anim$type <- summary.files[file]
-    
-    Anim.list[[file]] <- .extract_runDetailsFromType(run.anim)
-    
-    gc()
-    print(file)
-  } # End summary/detail file loop
   
-  Anim.long <- bind_rows(Anim.list, .id = "id")
+  for (file in 1:length(summary.files)) {
+    seed_file <- paste0(pathfiles, summary.files[file])
+    seed_file <- fread(seed_file, header = T, select = c("Rep","Duration","Num_Inf",
+                                                         "nAffCounties","Seed_FIPS",
+                                                         "Seed_Farms", "cullEffective",
+                                                         "vaxEffective"))
+    
+    run.anim <- seed_file %>%
+      mutate(completed = case_when(cullEffective > 0 & vaxEffective > 0 ~ TRUE,
+                                   TRUE ~ FALSE),
+             partial = case_when((cullEffective > 0 & vaxEffective == 0) | (cullEffective == 0 & vaxEffective > 0) ~ TRUE,
+                                 TRUE ~ FALSE),
+             noControl = case_when(cullEffective == 0  & vaxEffective == 0 ~ TRUE,
+                                   TRUE ~ FALSE))
+    
+    new_cols <- .extract_runDetailsFromTypeString(summary.files[file])
+    run.anim$type <- new_cols$type
+    run.anim$delay <- new_cols$delay
+    run.anim$control_type <- new_cols$control_type
+    
+    Anim.list[[file]] <- run.anim
+    print(file)
+  }
+  
+  Anim.long <- bind_rows(Anim.list)
   
   setwd(path_output)
   if (export.datafiles == 1 | export.datafiles == 3) {write.csv(Anim.long,paste0(paste0("Control_Completion_",Sys.Date()),".csv"),row.names=F)}
@@ -1133,4 +1105,77 @@ flaps_file_list <- lapply(1:10, function(flap) {
     }
   }
   return(data)
+}
+
+.localSpread = function (pathfiles = NULL, path0 = NULL, map_output = NULL, 
+                         detail.fnames = NULL, export.datafiles = 3, data_output = NULL, 
+                         run.types = NULL, runs_per_ctrl_type = NULL) {
+  print("Entering local spread function")
+  # Extract the infection route from the detail file
+  setwd(pathfiles)
+  TypeSpread.long <- list()
+  
+  # Set the number of cores for parallel processing
+  num_cores <- detectCores() -2  # Adjust the number of cores as needed
+  
+  # Register the parallel backend
+  cl <- makeCluster(num_cores)
+  registerDoSNOW(cl)
+  iterations = length(detail.fnames)
+  pb <- txtProgressBar(max = iterations, style = 3)
+  progress <- function(n) setTxtProgressBar(pb, n)
+  opts <- list(progress = progress)
+  
+  # List to store results
+  TypeSpread.long <- foreach(file = 1:length(detail.fnames), .packages = c("data.table","dplyr"), .combine = rbind, .options.snow = opts) %dopar% {
+    
+    det.file <- fread(detail.fnames[file], select = c("SourceCounty", "InfRoute", "ControlPrevented"))
+    
+    detail.res <- det.file[ControlPrevented == "none", ][, .N, by = .(SourceCounty, InfRoute)] %>% 
+      setnames(c("SourceCounty", "Local", "Ship")) %>% 
+      replace(is.na(.), 0) %>% 
+      mutate(type = unlist(strsplit(detail.fnames[file], "_FLAPS"))[1])
+    
+    return(detail.res)
+  }
+  
+  # Stop the parallel backend
+  stopCluster(cl)
+  
+  # Clean up
+  gc()
+  
+  # Convert the result to a data.frame
+  TypeSpread.long <- as.data.frame(TypeSpread.long)
+  
+  setwd(data_output)
+  if (export.datafiles == 1 | export.datafiles == 3) {write.csv(TypeSpread.long, "TypeSpread.long.csv")}
+  
+  ## Maps of the proportion of spread events that are local spread. 
+  # Create a vector for scale
+  TypeSpread.summary <- TypeSpread.long %>%
+    group_by(type,SourceCounty) %>% 
+    summarise(local = sum(Local), ship = sum(Ship)) %>%
+    mutate(propLocal = round((local/(local + ship))*100,0)) %>%
+    ungroup()
+  
+  local_scale <- round(c(0, 25, 50, 60, 70, 80, 85, 90, 95, 97.5, 99, 100),2)
+  
+  # loop over run types
+  print("Generating local spread maps.")
+  setwd(map_output)
+  for (i in 1:length(unique(TypeSpread.summary$type))){
+    name_df=TypeSpread.summary %>% filter(type == unique(TypeSpread.summary$type)[i]) %>% select(SourceCounty, propLocal)
+    if(all(colnames(name_df) == c("SourceCounty", "propLocal"))){
+      jpeg(paste0(map_output, paste0("PropLocal_",unique(TypeSpread.summary$type)[i],".jpeg"), sep=""), width = 1800, height = 900, units = 'px', res = 100)
+      map_by_fips(name_df, county.border.col = NA, state.border.col = "gray30",
+                  missing.include = TRUE, color.break.type = "values", legend.digits = 1,
+                  color.break.values = local_scale, 
+                  color.sequence = if(ls_match == TRUE) {palette} else {color_bluepurple}, 
+                  legend.spacing = 5.5, legend.shrink = 0.6, legend.width = 1)
+      dev.off()
+    } else {
+      stop(".localSpread(): dataframe is not formatted correctly. Mapping aborted. ")
+    }
+  }
 }
