@@ -21,6 +21,8 @@ To use this project, clone the repository to your local machine. The post-proces
 ## Running `processUSDOS()`
 To run the post-processing function, `processUSDOS()`, navigate to the `run_postProcessing_USDOSDv2.1.R` script, set the working directory (line 10), load the `processUSDOS()` function (line 51), and execute the function (lines 53 - 64). Running this script will generate directories labeled `Data`, `Figures`, and `Maps` with desired outputs.
 
+If you are interested in generating figures in the manuscript, the `FlexibleControlStrategy_PostProcessing.R` script will use the post-processing function to generate data files and then includes code necessary to reproduce these figures.
+
 ## Important Notes`
 Within the `processUSDOS()` function, all functions that begin with a `.` (e.g. .reshape_data() or .extract_runDetailsFromType()) are custom and can be found in the `Include_Files` directory. `processUSDOS()` will dynamically determine whether or not a machine is capable of using parallelized code and the number of cores to use for processing (n-2).
 
